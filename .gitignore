@@ -1,0 +1,63 @@
+# ------------------------------------------------------------------
+#  Aula Virtual EducaXpert — .gitignore
+# ------------------------------------------------------------------
+
+# ---- Dependencias (se instalan con composer / npm) ----
+/vendor/
+/node_modules/
+
+# ---- Variables de entorno / secretos ----
+/.env
+/.env.*
+!/.env.example
+
+# ---- Datos y almacenamiento de Moodle ----
+# moodledata vive FUERA de este árbol; se ignora por si alguien lo coloca dentro.
+/moodledata/
+/config-local.php
+
+# ---- Configuración local de pruebas ----
+/phpunit.xml
+/behat.yml
+/.behat/
+/.phpunit.result.cache
+/.php-cs-fixer.cache
+/.php_cs.cache
+
+# ---- Logs y basura de ejecución ----
+error_log
+**/error_log
+*.log
+/lib/editor/tinymce/plugins/spellchecker/*.log
+
+# ---- Editores / IDE / SO ----
+/.idea/
+/.vscode/
+*.iml
+/nbproject/
+/.settings/
+.project
+.buildpath
+tags
+.DS_Store
+Thumbs.db
+
+# ---- Node / build ----
+/npm-debug.log
+/.grunt/_cache/
+
+# CI de Moodle upstream (no aplica al fork)
+/.github/workflows/
+
+# ---- Ficheros por-entorno (los genera cada servidor / cPanel) ----
+/.htaccess
+/.user.ini
+/php.ini
+/config-local.php
+/config.php.backup
+
+# ---- Backups sueltos ----
+*.backup
+*.bak
+*.orig
+*.save
