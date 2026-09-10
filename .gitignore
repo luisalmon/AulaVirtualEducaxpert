@@ -39,6 +39,9 @@ error_log
 .project
 .buildpath
 tags
+*.swp
+*.swo
+*~
 .DS_Store
 Thumbs.db
 
@@ -47,7 +50,7 @@ Thumbs.db
 /.grunt/_cache/
 
 # CI de Moodle upstream (no aplica al fork)
-/.github/workflows/
+**/.github/workflows/
 
 # ---- Ficheros por-entorno (los genera cada servidor / cPanel) ----
 /.htaccess
@@ -61,3 +64,9 @@ Thumbs.db
 *.bak
 *.orig
 *.save
+
+# ---- Ficheros por-entorno en el webroot (estructura split 5.x) ----
+/public/.htaccess
+/public/.user.ini
+/public/php.ini
+/public/config.php.local
