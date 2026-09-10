@@ -50,11 +50,24 @@ if [ -n "${MOODLE_ZIP:-}" ]; then
   echo "==> Zip local: $ZIP"
 else
   ZIP="$STAGE/moodle-latest-$STABLE.zip"
-  URL="https://download.moodle.org/download.php/stable$STABLE/moodle-latest-$STABLE.zip"
-  echo "==> Descargando $URL"
-  curl -fL --retry 3 --progress-bar -o "$ZIP" "$URL"
+  # packaging.moodle.org sirve el zip directo, sin la capa de mirrors de download.moodle.org
+  BASE="https://packaging.moodle.org/stable$STABLE"
+  echo "==> Descargando $BASE/moodle-latest-$STABLE.zip"
+  curl -fL --retry 3 --connect-timeout 20 --progress-bar -o "$ZIP" "$BASE/moodle-latest-$STABLE.zip"
+  if curl -fsL --connect-timeout 20 -o "$ZIP.sha256" "$BASE/moodle-latest-$STABLE.zip.sha256"; then
+    want="$(grep -oiE '[0-9a-f]{64}' "$ZIP.sha256" | head -1 | tr 'A-F' 'a-f')"
+    got="$(sha256sum "$ZIP" | cut -d' ' -f1)"
+    if [ -n "$want" ] && [ "$want" = "$got" ]; then
+      echo "==> SHA256 OK ($got)"
+    else
+      echo "!! SHA256 NO coincide  (esperado: $want / obtenido: $got)" >&2; exit 1
+    fi
+  else
+    echo "==> (sin .sha256 publicado; se omite la verificación de hash)"
+  fi
 fi
 echo "==> Comprobando integridad del zip"
+head -c2 "$ZIP" | grep -q 'PK' || { echo "!! Lo descargado NO es un ZIP. Primeros bytes:" >&2; head -c300 "$ZIP" >&2; echo >&2; exit 1; }
 unzip -tq "$ZIP" >/dev/null
 echo "==> Extrayendo"
 unzip -q "$ZIP" -d "$STAGE"                 # -> $STAGE/moodle/
