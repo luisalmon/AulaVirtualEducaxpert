@@ -50,8 +50,21 @@ if ($courseindexopen) {
 $blockshtml = $OUTPUT->blocks('side-pre');
 $hasblocks = (strpos($blockshtml, 'data-block=') !== false || !empty($addblockbutton));
 
-$addcontentblockbutton = $OUTPUT->addblockbutton('content');
-$contentblocks = $OUTPUT->custom_block_region('content');
+// EducaXpert: drawers.php es el fichero de layout de moove para 'course' (el
+// único que moove declara explícitamente en config.php), pero Moodle también
+// lo reutiliza para cualquier otro layout de Boost que apunte al mismo nombre
+// de fichero ('mycourses'/dashboard, 'mydashboard', 'admin', etc.). Esas
+// páginas ya pintan el bloque de la región 'content' ellas mismas como
+// contenido principal (p.ej. my/courses.php llama a
+// $OUTPUT->custom_block_region('content') directo) — computarlo también aquí
+// lo duplicaba. Limitarlo al layout 'course', que es para el que existe.
+if ($PAGE->pagelayout === 'course') {
+    $addcontentblockbutton = $OUTPUT->addblockbutton('content');
+    $contentblocks = $OUTPUT->custom_block_region('content');
+} else {
+    $addcontentblockbutton = '';
+    $contentblocks = '';
+}
 
 if (!$hasblocks) {
     $blockdraweropen = false;
