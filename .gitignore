@@ -16,6 +16,9 @@
 /moodledata/
 /config-local.php
 
+# ---- Respaldos de BD que hace upgrade-core.sh antes de actualizar ----
+/backup/
+
 # ---- Configuración local de pruebas ----
 /phpunit.xml
 /behat.yml
