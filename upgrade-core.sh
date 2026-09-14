@@ -43,8 +43,12 @@ KEEP_PLUGINS=(
   blocks/senceluisalmon
 )
 # Ficheros de la raíz del repo que nunca se tocan.
+# vendor/ NO está aquí a propósito: cada versión de Moodle trae su propio
+# composer.json/composer.lock con dependencias distintas, así que el viejo
+# se borra con el resto del árbol y se regenera después con composer.phar
+# (ver el aviso en "SIGUIENTES PASOS").
 KEEP_FILES=(.git .gitignore .env .env.example config.php config-local.php
-            README.md INSTALL.md upgrade-core.sh)
+            README.md INSTALL.md upgrade-core.sh composer.phar)
 
 cd "$REPO"
 echo "==> Repositorio: $REPO"
@@ -245,22 +249,25 @@ cat <<EOF
 
  SIGUIENTES PASOS
  1) git status                       # el diff es enorme (reorg + core)
- 2) Actualizar los plugins de terceros a su versión para $NEWVER
+ 2) php composer.phar install --no-dev --optimize-autoloader
+    (vendor/ es de RUNTIME en 5.x -router, htmlpurifier, phpmailer...-,
+     no solo dev; el viejo se borró con el resto del árbol)
+ 3) Actualizar los plugins de terceros a su versión para $NEWVER
     (bajar de https://moodle.org/plugins y reemplazar la carpeta en public/):
       theme_moove   mod_customcert   mod_hvp   auth_userkey
       format_remuiformat   qformat_h5p   theme_trema
- 3) Servir desde public/ :
+ 4) Servir desde public/ :
       local:  php -S localhost:8080 -t public
       QA:     symlink del dominio -> <repo>/public
- 4) Probar sobre una COPIA de la BD:
+ 5) Probar sobre una COPIA de la BD:
       mysqldump -u root educaxpert_aula > backup-4.5.sql
       mysql -u root -e "CREATE DATABASE educaxpert_aula_m5 CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
       mysql -u root educaxpert_aula_m5 < backup-4.5.sql
       sed -i 's/^MOODLE_DB_NAME=.*/MOODLE_DB_NAME=educaxpert_aula_m5/' .env
- 5) php admin/cli/checks.php
- 6) php admin/cli/upgrade.php --non-interactive
- 7) php admin/cli/purge_caches.php
- 8) Si upgrade.php se detiene por un plugin -> actualízalo/desactívalo y repite 6
- 9) git add -A && git commit -m "Migración a $NEWVER (estructura public/)"
+ 6) php admin/cli/checks.php
+ 7) php admin/cli/upgrade.php --non-interactive
+ 8) php admin/cli/purge_caches.php
+ 9) Si upgrade.php se detiene por un plugin -> actualízalo/desactívalo y repite 7
+10) git add -A && git commit -m "Migración a $NEWVER (estructura public/)"
 ===================================================================
 EOF
