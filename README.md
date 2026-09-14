@@ -88,7 +88,7 @@ $EDITOR .env      # BD, MOODLE_WWWROOT, MOODLE_DATAROOT (ruta ABSOLUTA)
 
 # vendor/ ya viene en el repo — no hace falta este paso salvo que quieras
 # regenerarlo (usa el composer.phar del propio repo, no el del sistema):
-# php composer.phar install --no-dev --optimize-autoloader
+# php composer.phar install --no-dev --classmap-authoritative
 
 # Base de datos
 mysql -u root -e "CREATE DATABASE educaxpert_aula CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"

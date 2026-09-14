@@ -258,7 +258,7 @@ cat <<EOF
 
  SIGUIENTES PASOS
  1) git status                       # el diff es enorme (reorg + core)
- 2) php composer.phar install --no-dev --optimize-autoloader
+ 2) php composer.phar install --no-dev --classmap-authoritative
     (vendor/ es de RUNTIME en 5.x -router, htmlpurifier, phpmailer...-,
      no solo dev; el viejo se borró con el resto del árbol)
  3) Actualizar los plugins de terceros a su versión para $NEWVER
