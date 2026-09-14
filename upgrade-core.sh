@@ -2,10 +2,13 @@
 #
 # upgrade-core.sh — Actualiza el NÚCLEO de Moodle (estructura "public/" de 5.x)
 # conservando los plugins propios de EducaXpert y la configuración.
-# Antes de tocar nada, si el .env apunta a una BD que ya existe (tiene tablas),
-# la respalda en backup/<fecha>/ (mysqldump comprimido); si es una instalación
-# nueva, omite ese paso. La MIGRACIÓN de la BD (el upgrade en sí) sigue
-# haciéndola 'php admin/cli/upgrade.php' después, no este script.
+# Antes de tocar nada, respalda en backup/<fecha_hora>/ todo lo que ya exista:
+# la BD (mysqldump comprimido), moodledata (zip/tar.gz) y el código actual del
+# repo (zip/tar.gz, antes de que el paso 4 lo borre). En una instalación nueva
+# omite cada pieza que no exista. SKIP_DATA_BACKUP=1 salta moodledata/código
+# (deja solo la BD, para iterar rápido en local). La MIGRACIÓN de la BD (el
+# upgrade en sí) la sigue haciendo 'php admin/cli/upgrade.php' después, no
+# este script.
 #
 # La primera vez migra el repo de la estructura plana 4.5 a la split 5.x:
 #   <repo>/            -> admin/cli, lib (shim), scripts, config-dist.php ...
@@ -16,6 +19,7 @@
 #   git checkout -b upgrade/moodle-502
 #   ./upgrade-core.sh 502
 #   MOODLE_ZIP=/ruta/moodle-latest-502.zip ./upgrade-core.sh 502
+#   SKIP_DATA_BACKUP=1 ./upgrade-core.sh 502   # sin zip de moodledata/código (BD sí se respalda)
 #
 set -euo pipefail
 
@@ -59,9 +63,11 @@ else
   SRC_BASE="."; echo "==> Estructura actual: plana -> se migrará a split"
 fi
 
-# 1 · Respaldo de la base de datos (solo si ya existe una con tablas) ------
-# Lee la conexión desde .env. Si no hay .env, no hay BD, o no hay tablas
-# (instalación nueva), se omite: no hay nada que respaldar.
+# 1 · Respaldo antes de tocar nada (BD + moodledata + código actual) ------
+# Todo lo que exista se junta en backup/<fecha_hora>/. Lo que no exista
+# (instalación nueva, o MOODLE_DATAROOT sin definir) se omite con un aviso.
+# SKIP_DATA_BACKUP=1 salta moodledata/código (deja solo la BD) para iterar
+# rápido en local; la BD nunca se salta por esa variable.
 env_get() {
   local key="$1" val
   val="$(grep -E "^${key}=" "$REPO/.env" 2>/dev/null | tail -1 | cut -d= -f2-)"
@@ -71,6 +77,29 @@ env_get() {
   printf '%s' "$val"
 }
 
+# archive_dir <carpeta> <salida-sin-extension> [patrones-a-excluir...]
+# Comprime con zip si está disponible; si no, cae a tar.gz. Imprime la ruta
+# final por stdout (para capturarla con $(...)).
+archive_dir() {
+  local src="$1" out="$2" base; shift 2
+  base="$(basename "$src")"
+  if command -v zip >/dev/null 2>&1; then
+    local zargs=()
+    for pat in "$@"; do zargs+=(-x "${base}/${pat}"); done
+    ( cd "$(dirname "$src")" && zip -rq "${out}.zip" "$base" "${zargs[@]}" )
+    printf '%s' "${out}.zip"
+  else
+    local targs=()
+    for pat in "$@"; do targs+=(--exclude="${base}/${pat}"); done
+    tar czf "${out}.tgz" "${targs[@]}" -C "$(dirname "$src")" "$base"
+    printf '%s' "${out}.tgz"
+  fi
+}
+
+BACKDIR="$REPO/backup/$(date +%Y%m%d_%H%M%S)"
+DID_BACKUP=0
+
+# 1a) Base de datos --------------------------------------------------------
 if [ ! -f "$REPO/.env" ]; then
   echo "==> Sin .env: se omite el respaldo de BD (no hay conexión configurada)"
 elif ! command -v mysql >/dev/null 2>&1 || ! command -v mysqldump >/dev/null 2>&1; then
@@ -97,16 +126,56 @@ else
     case "$TBLCOUNT" in ''|*[!0-9]*) TBLCOUNT=0 ;; esac
 
     if [ "$TBLCOUNT" -gt 0 ]; then
-      BACKDIR="$REPO/backup/$(date +%Y%m%d_%H%M%S)"
       mkdir -p "$BACKDIR"
-      echo "==> Respaldando BD '$DBNAME' ($TBLCOUNT tablas) en $BACKDIR"
+      echo "==> Respaldando BD '$DBNAME' ($TBLCOUNT tablas)"
       mysqldump "${MYSQL_ARGS[@]}" --single-transaction --no-tablespaces --routines --triggers "$DBNAME" \
         | gzip > "$BACKDIR/${DBNAME}.sql.gz"
       echo "    $(du -h "$BACKDIR/${DBNAME}.sql.gz" | cut -f1)  ${BACKDIR}/${DBNAME}.sql.gz"
+      DID_BACKUP=1
     else
       echo "==> BD '$DBNAME' no existe o no tiene tablas (instalación nueva): se omite el respaldo"
     fi
   fi
+fi
+
+# 1b) moodledata ------------------------------------------------------------
+if [ -n "${SKIP_DATA_BACKUP:-}" ]; then
+  echo "==> SKIP_DATA_BACKUP=1: se omite el respaldo de moodledata y del código"
+else
+  DATAROOT="$(env_get MOODLE_DATAROOT)"
+  if [ -n "$DATAROOT" ] && [ -d "$DATAROOT" ] && [ -n "$(ls -A "$DATAROOT" 2>/dev/null)" ]; then
+    mkdir -p "$BACKDIR"
+    echo "==> Comprimiendo moodledata ($DATAROOT) — puede tardar según su tamaño"
+    ARCHIVE="$(archive_dir "$DATAROOT" "$BACKDIR/moodledata")"; rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$ARCHIVE" ] && [ -f "$ARCHIVE" ]; then
+      echo "    $(du -h "$ARCHIVE" | cut -f1)  $ARCHIVE"
+      DID_BACKUP=1
+    else
+      echo "!! No se pudo comprimir moodledata (¿espacio en disco?); continúo sin ese respaldo" >&2
+    fi
+  else
+    echo "==> MOODLE_DATAROOT no definido/inexistente/vacío: se omite el respaldo de moodledata"
+  fi
+
+  # 1c) código actual del repo, ANTES de que el paso 4 lo borre --------------
+  if [ -n "$(find "$REPO" -mindepth 1 -maxdepth 1 ! -name .git ! -name backup 2>/dev/null)" ]; then
+    mkdir -p "$BACKDIR"
+    echo "==> Comprimiendo el código actual del repo"
+    ARCHIVE="$(archive_dir "$REPO" "$BACKDIR/codigo-actual" '.git/*' 'backup/*' 'vendor/*' 'node_modules/*')"; rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$ARCHIVE" ] && [ -f "$ARCHIVE" ]; then
+      echo "    $(du -h "$ARCHIVE" | cut -f1)  $ARCHIVE"
+      DID_BACKUP=1
+    else
+      echo "!! No se pudo comprimir el código actual; continúo sin ese respaldo" >&2
+    fi
+  fi
+fi
+
+if [ "$DID_BACKUP" -eq 1 ]; then
+  echo "==> Respaldo en: $BACKDIR"
+else
+  rmdir "$BACKDIR" 2>/dev/null || true
+  echo "==> Nada que respaldar (instalación nueva)"
 fi
 
 # 2 · Obtener el núcleo -----------------------------------------------------
@@ -184,7 +253,7 @@ cat <<EOF
 ===================================================================
  Núcleo actualizado a:  $NEWVER   (estructura split: la app va en public/)
  Rama:                   $BRANCH
- Respaldo de BD:         ${BACKDIR:-(omitido, ver arriba por qué)}
+ Respaldo:               $([ "$DID_BACKUP" -eq 1 ] && echo "$BACKDIR" || echo "(omitido, ver arriba por qué)")
 
  SIGUIENTES PASOS
  1) git status                       # el diff es enorme (reorg + core)
