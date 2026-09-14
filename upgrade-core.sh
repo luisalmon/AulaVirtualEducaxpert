@@ -48,7 +48,7 @@ KEEP_PLUGINS=(
 # se borra con el resto del árbol y se regenera después con composer.phar
 # (ver el aviso en "SIGUIENTES PASOS").
 KEEP_FILES=(.git .gitignore .env .env.example config.php config-local.php
-            README.md INSTALL.md upgrade-core.sh composer.phar)
+            README.md INSTALL.md upgrade-core.sh composer.phar fonts)
 
 cd "$REPO"
 echo "==> Repositorio: $REPO"
@@ -239,6 +239,16 @@ for p in "${KEEP_PLUGINS[@]}"; do
   cp -a "$STAGE/keep/$p" "$REPO/public/$p"
   echo "    + public/$p"
 done
+
+# 7 · Reinstalar fuentes propias de TCPDF (p.ej. la "arial" de los diplomas) -
+# public/lib se pisó entero en el paso 5; fonts/ (en KEEP_FILES) sobrevivió
+# y se copia aquí encima de las fuentes de fábrica de TCPDF.
+if [ -d "$REPO/fonts/tcpdf/compiled" ] && [ -n "$(ls -A "$REPO/fonts/tcpdf/compiled" 2>/dev/null)" ]; then
+  echo "==> Reinstalando fuentes TCPDF propias (fonts/tcpdf/compiled/)"
+  mkdir -p "$REPO/public/lib/tcpdf/fonts"
+  cp -a "$REPO/fonts/tcpdf/compiled/." "$REPO/public/lib/tcpdf/fonts/"
+  echo "    + $(ls "$REPO/fonts/tcpdf/compiled" | wc -l) ficheros"
+fi
 
 cat <<EOF
 
