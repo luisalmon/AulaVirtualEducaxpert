@@ -34,7 +34,7 @@ en `public/` y solo eso es el *document root*; el resto queda fuera del webroot.
     ├── config.php      Stub:  require '../config.php'
     ├── version.php     5.2.2+
     ├── theme/moove   theme/trema
-    ├── blocks/sence  blocks/senceluisalmon
+    ├── blocks/senceluisalmon
     ├── mod/customcert  mod/hvp
     ├── auth/userkey   course/format/remuiformat   question/format/h5p
     └── …
@@ -44,7 +44,7 @@ en `public/` y solo eso es el *document root*; el resto queda fuera del webroot.
 |------|:---:|------|
 | Núcleo Moodle (raíz + `public/`) | ✅ | Moodle 5.2.2+ |
 | `public/theme/moove`, `public/theme/trema` | ✅ | Temas propios (activo: **moove**) |
-| `public/blocks/sence`, `public/blocks/senceluisalmon` | ✅ | Integración SENCE (Chile) |
+| `public/blocks/senceluisalmon` | ✅ | Integración SENCE (Chile) |
 | `config.php` | ✅ | Sin secretos: lee variables de entorno / `.env` |
 | `.env.example` | ✅ | Plantilla de configuración |
 | `.env`, `config-local.php` | ❌ | Config real de cada entorno (secretos) |
@@ -141,9 +141,10 @@ la raíz, se incluye antes del arranque (ajustes `$CFG->*` propios del entorno:
 ## Personalizaciones de EducaXpert
 
 - **Tema `moove`** (activo) y **tema `trema`** — identidad visual EducaXpert.
-- **`public/blocks/sence` + `public/blocks/senceluisalmon`** — asistencia y
-  reportería hacia **SENCE** (RCE). Configurados vía `$CFG->sence` en `config.php`,
-  alimentado desde `SENCE_*`.
+- **`public/blocks/senceluisalmon`** — asistencia y reportería hacia **SENCE**
+  (RCE). Configurado vía `$CFG->sence` en `config.php`, alimentado desde
+  `SENCE_*`. (El bloque `block_sence` original se retiró: solo servía de
+  referencia, `senceluisalmon` es la integración real en uso.)
 - **`mod/customcert`** (+ elementos) para diplomas; **`format_remuiformat`**,
   **`mod/hvp`**, **`auth/userkey`**, **`qformat_h5p`**.
 - **Fuente "arial" para los diplomas** — ver [`fonts/tcpdf/README.md`](fonts/tcpdf/README.md).
@@ -200,7 +201,7 @@ carpeta bajo `public/`:
 
 `theme_moove`, `mod_customcert` (+ elementos; ojo `subplugins.json`, MDL-83705),
 `mod_hvp`, `auth_userkey`, `format_remuiformat`, `qformat_h5p`. Verificar
-`theme_trema`. Probar a fondo los in-house `block_sence` y `block_senceluisalmon`.
+`theme_trema`. Probar a fondo el in-house `block_senceluisalmon`.
 
 Repetir el paso 2 hasta que el sitio funcione sin errores (login, panel, un
 curso, generar un diploma, el bloque SENCE, ajustes del tema).

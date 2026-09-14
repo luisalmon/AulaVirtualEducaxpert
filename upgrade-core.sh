@@ -39,7 +39,6 @@ KEEP_PLUGINS=(
   auth/userkey
   course/format/remuiformat
   question/format/h5p
-  blocks/sence
   blocks/senceluisalmon
 )
 # Ficheros de la raíz del repo que nunca se tocan.
