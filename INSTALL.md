@@ -220,17 +220,26 @@ readlink -f /home/educaxpert/qaaula.educaxpert.cl     # -> .../aulavirtual/publi
 
 **Router (`core_router`, nuevo en 5.x).** Añadir al `.htaccess` de `public/` un
 rewrite que mande las rutas no-fichero a `r.php`, y luego marcar el router como
-configurado:
+configurado. `$CFG->routerconfigured` **no** es un ajuste de `mdl_config`: vive
+en `config.php`/`config-local.php`, así que `admin/cli/cfg.php --set` lo rechaza
+("is set in config.php, unable to change") — hay que ponerlo en el fichero:
 
-```apache
-# public/.htaccess
+```bash
+# 1) el rewrite (se añade sin pisar el resto del .htaccess)
+grep -q 'RewriteRule \^(\.\*)\$ r\.php' public/.htaccess 2>/dev/null || cat >> public/.htaccess <<'EOF'
+
+# --- Router de Moodle 5.x ---
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ r.php [QSA,L]
-```
-```bash
-php admin/cli/cfg.php --name=routerconfigured --set=1
+EOF
+
+# 2) marcar el router como configurado (en config-local.php, revisa antes de no pisarlo)
+cat config-local.php
+echo '$CFG->routerconfigured = true;' >> config-local.php
+php -l config-local.php
+
 php admin/cli/purge_caches.php
 ```
 Sin esto el sitio funciona igual (vía `/r.php/…`), pero el check de estado sale
@@ -291,8 +300,9 @@ configurar el router). Ver [`README.md` §Actualizar Moodle](README.md#actualiza
 - **Estructura split 5.x**: document root = `<repo>/public`. El symlink del
   dominio y los `.htaccess`/`.user.ini` van a `public/`. Los CLI (`admin/cli/…`)
   se ejecutan desde la raíz.
-- **Router (`core_router`)**: check nuevo. Rewrite a `public/r.php` +
-  `cfg.php --name=routerconfigured --set=1`. Ver §2.8.
+- **Router (`core_router`)**: check nuevo. Rewrite a `public/r.php` en
+  `public/.htaccess` + `$CFG->routerconfigured = true;` en `config-local.php`
+  (NO con `cfg.php --set`, esa variable no está en `mdl_config`). Ver §2.8.
 - **`cookiesecure`**: `1` en QA/prod (HTTPS); `0` en local por HTTP, si no el
   login entra en bucle ("Invalid Login Token" con clientes sin cabecera `Referer`).
 - **Docroot por symlink**: `/home/educaxpert/qaaula.educaxpert.cl` es un enlace a la
