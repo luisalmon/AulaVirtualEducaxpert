@@ -146,6 +146,9 @@ la raíz, se incluye antes del arranque (ajustes `$CFG->*` propios del entorno:
   alimentado desde `SENCE_*`.
 - **`mod/customcert`** (+ elementos) para diplomas; **`format_remuiformat`**,
   **`mod/hvp`**, **`auth/userkey`**, **`qformat_h5p`**.
+- **Fuente "arial" para los diplomas** — ver [`fonts/tcpdf/README.md`](fonts/tcpdf/README.md).
+  `upgrade-core.sh` la reinstala solo en cada actualización de núcleo (si no,
+  se pierde: `public/lib` viene completo en cada versión de Moodle).
 
 ---
 
