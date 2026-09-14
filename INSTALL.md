@@ -42,7 +42,8 @@ SENCE) viven **solo** en el `.env` de cada servidor.
 ## 1 · Entorno local (PC de desarrollo)
 
 Requisitos: PHP 8.2–8.4 (`mysqli`, `gd`, `curl`, `intl`, `mbstring`, `zip`,
-`soap`, `xml`), MariaDB/MySQL, Composer, Git.
+`soap`, `xml`), MariaDB/MySQL, Git. Composer **no** hace falta tenerlo
+instalado: `vendor/` y `composer.phar` van versionados en el repo.
 
 ```bash
 # 1. Código y datos (separados)
@@ -276,7 +277,8 @@ tar czf ~/qa-moodledata-$(date +%F).tgz -C /home/educaxpert/proyect/qa moodledat
 
 php admin/cli/maintenance.php --enable
 git pull --ff-only origin main
-composer install --no-dev --optimize-autoloader   # solo si cambiaron dependencias
+# vendor/ va versionado en el repo (es runtime en 5.x): el git pull ya lo trae
+# resuelto, no hace falta correr composer aquí.
 php admin/cli/upgrade.php --non-interactive        # migra la BD si el código trae versión nueva
 php admin/cli/purge_caches.php
 php admin/cli/maintenance.php --disable

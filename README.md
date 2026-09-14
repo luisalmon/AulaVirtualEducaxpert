@@ -27,6 +27,8 @@ en `public/` y solo eso es el *document root*; el resto queda fuera del webroot.
 ├── lib/                Shim que reenvía a public/lib
 ├── config.php          Config env-based de EducaXpert  (raíz, fuera del webroot)
 ├── config-dist.php     Plantilla de Moodle
+├── composer.phar       Herramienta versionada (evita depender de tener composer en el servidor)
+├── vendor/              Dependencias de RUNTIME (router, htmlpurifier, phpmailer…) — versionado
 ├── scripts/  Gruntfile.js  composer.json  package.json  …   Herramientas de build
 └── public/             *** DOCUMENT ROOT ***  (la app: admin, mod, theme, lib…)
     ├── config.php      Stub:  require '../config.php'
@@ -46,7 +48,8 @@ en `public/` y solo eso es el *document root*; el resto queda fuera del webroot.
 | `config.php` | ✅ | Sin secretos: lee variables de entorno / `.env` |
 | `.env.example` | ✅ | Plantilla de configuración |
 | `.env`, `config-local.php` | ❌ | Config real de cada entorno (secretos) |
-| `vendor/`, `node_modules/` | ❌ | Se instalan con Composer / npm (en la raíz) |
+| `composer.phar`, `vendor/` | ✅ | Dependencias de **runtime** en 5.x (ver más abajo), no solo dev |
+| `node_modules/` | ❌ | Solo hace falta para compilar JS/CSS de los temas |
 | `moodledata/` | ❌ | Vive **fuera** de este árbol |
 | `**/.github/workflows/`, `error_log`, `*.log`, `*.swp` | ❌ | CI ajeno / ruido |
 
@@ -61,7 +64,12 @@ apuntar a **`<repo>/public`**. Los scripts CLI se ejecutan **desde la raíz**
 - **PHP 8.2 – 8.4** (8.3 recomendado) con: `mysqli`/`pgsql`, `gd`, `curl`,
   `intl`, `mbstring`, `xml`/`soap`, `zip`, `iconv`, `sodium`, `opcache`
 - **MariaDB 10.6.7+** / **MySQL 8.0+** (o PostgreSQL 13+)
-- **Composer 2.x**, y **Node 20+ / npm** solo si se compila JS/CSS de temas
+- Nada de Composer instalado hace falta para arrancar: `vendor/` y
+  `composer.phar` van versionados (ver tabla arriba). Solo se necesita
+  Composer si vas a **regenerar** `vendor/` (otra versión de Moodle, o
+  cambios en `composer.json`) — entonces usa el `composer.phar` del repo,
+  no hace falta tenerlo instalado en el sistema.
+- **Node 20+ / npm** solo si se compila JS/CSS de temas
 - Un **`moodledata`** con escritura, fuera del *document root*
 - Para el **router** (`core_router`, nuevo en 5.x): un rewrite en el servidor web
   que envíe las rutas a `public/r.php` — ver [`INSTALL.md`](INSTALL.md). Sin él el
@@ -78,7 +86,9 @@ cd aulavirtual
 cp .env.example .env
 $EDITOR .env      # BD, MOODLE_WWWROOT, MOODLE_DATAROOT (ruta ABSOLUTA)
 
-composer install --no-dev            # opcional (solo tests / herramientas)
+# vendor/ ya viene en el repo — no hace falta este paso salvo que quieras
+# regenerarlo (usa el composer.phar del propio repo, no el del sistema):
+# php composer.phar install --no-dev --optimize-autoloader
 
 # Base de datos
 mysql -u root -e "CREATE DATABASE educaxpert_aula CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
