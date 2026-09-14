@@ -18,9 +18,9 @@
  * Upgrade file.
  *
  * @package     theme_trema
- * @copyright   2024-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2024-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Michael Milette
- * @copyright   2024-2025 Trema - {@link https://trema.tech/}
+ * @copyright   2024-2026 Trema - {@link https://trema.tech/}
  * @author      Rodrigo Mady
  * @copyright   Based on 2022 Willian Mano {@link https://conecti.me}.
  * @author      Based on Willian Mano {@link https://conecti.me}.
@@ -52,7 +52,7 @@ function xmldb_theme_trema_upgrade($oldversion): bool {
             foreach ($usertours as $usertour) {
                 $configdata = json_decode($usertour->configdata);
 
-                if (in_array('boost', $configdata->filtervalues->theme)) {
+                if (isset($configdata->filtervalues->theme) && in_array('boost', $configdata->filtervalues->theme)) {
                     $configdata->filtervalues->theme[] = 'trema';
                 }
 

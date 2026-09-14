@@ -22,12 +22,28 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+declare(strict_types=1);
+
 namespace customcertelement_daterange;
 
+use mod_customcert\element as base_element;
+use mod_customcert\element\form_element_interface;
+use mod_customcert\element\persistable_element_interface;
+use mod_customcert\element\preparable_form_interface;
+use mod_customcert\element\renderable_element_interface;
+use mod_customcert\element\restorable_element_interface;
+use mod_customcert\element\validatable_element_interface;
 use mod_customcert\element_helper;
+use mod_customcert\service\certificate_repository;
+use mod_customcert\service\element_renderer;
+use MoodleQuickForm;
+use pdf;
+use restore_customcert_activity_task;
+use stdClass;
 
-defined('MOODLE_INTERNAL') || die('Direct access to this script is forbidden.');
+defined('MOODLE_INTERNAL') || die();
 
+global $CFG;
 require_once($CFG->dirroot . '/lib/grade/constants.php');
 
 /**
@@ -37,7 +53,14 @@ require_once($CFG->dirroot . '/lib/grade/constants.php');
  * @copyright  2018 Dmitrii Metelkin <dmitriim@catalyst-au.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class element extends \mod_customcert\element {
+class element extends base_element implements
+    form_element_interface,
+    persistable_element_interface,
+    preparable_form_interface,
+    renderable_element_interface,
+    restorable_element_interface,
+    validatable_element_interface
+{
     /**
      * Max recurring period in seconds.
      */
@@ -104,11 +127,12 @@ class element extends \mod_customcert\element {
     const DATE_CURRENT_DATE = -6;
 
     /**
-     * This function renders the form elements when adding a customcert element.
+     * Build the configuration form for this element.
      *
-     * @param \MoodleQuickForm $mform the edit form instance
+     * @param MoodleQuickForm $mform
+     * @return void
      */
-    public function render_form_elements($mform) {
+    public function build_form(MoodleQuickForm $mform): void {
         global $COURSE;
 
         // Get the possible date options.
@@ -125,7 +149,7 @@ class element extends \mod_customcert\element {
         $mform->addElement('select', 'dateitem', get_string('dateitem', 'customcertelement_daterange'), $dateoptions);
         $mform->addHelpButton('dateitem', 'dateitem', 'customcertelement_daterange');
 
-        parent::render_form_elements($mform);
+        element_helper::render_common_form_elements($mform, $this->showposxy);
 
         $mform->addElement('header', 'dateranges', get_string('dateranges', 'customcertelement_daterange'));
         $mform->addElement('static', 'help', '', get_string('help', 'customcertelement_daterange'));
@@ -135,11 +159,8 @@ class element extends \mod_customcert\element {
         $mform->addHelpButton('fallbackstring', 'fallbackstring', 'customcertelement_daterange');
         $mform->setType('fallbackstring', PARAM_NOTAGS);
 
-        if (empty($this->get_decoded_data()->dateranges)) {
-            $repeats = 1;
-        } else {
-            $repeats = count($this->get_decoded_data()->dateranges);
-        }
+        $payload = $this->get_payload();
+        $repeats = count($payload['dateranges'] ?? []) ?: 1;
 
         $ranges = [];
 
@@ -195,92 +216,81 @@ class element extends \mod_customcert\element {
      * A helper function to build consistent form element name.
      *
      * @param string $name
-     * @param string $num
+     * @param int|string $num
      *
      * @return string
      */
-    protected function build_element_name($name, $num) {
+    protected function build_element_name(string $name, int|string $num): string {
         return $name . '[' . $num . ']';
     }
 
     /**
-     * Get decoded data stored in DB.
+     * Normalise daterange element data.
      *
-     * @return \stdClass
+     * @param stdClass $formdata
+     * @return array
      */
-    protected function get_decoded_data() {
-        if ($this->get_data()) {
-            return json_decode($this->get_data());
-        }
+    public function normalise_data(stdClass $formdata): array {
+        return [
+            'dateitem' => $formdata->dateitem ?? '',
+            'fallbackstring' => $formdata->fallbackstring ?? '',
+            'font' => (string)($formdata->font ?? ''),
+            'fontsize' => (int)($formdata->fontsize ?? 0),
+            'colour' => (string)($formdata->colour ?? ''),
+            'width' => (int)($formdata->width ?? 0),
+            'dateranges' => array_values(array_filter(array_map(function ($i) use ($formdata) {
+                if (!empty($formdata->rangedelete[$i])) {
+                    return null;
+                }
+                return [
+                    'startdate' => (int)($formdata->startdate[$i] ?? 0),
+                    'enddate' => (int)($formdata->enddate[$i] ?? 0),
+                    'datestring' => (string)($formdata->datestring[$i] ?? ''),
+                    'recurring' => !empty($formdata->recurring[$i]),
+                ];
+            }, range(0, (int)($formdata->repeats ?? 0) - 1)))),
+        ];
     }
 
     /**
-     * Sets the data on the form when editing an element.
+     * Validate submitted form data for this element.
      *
-     * @param \MoodleQuickForm $mform the edit form instance
+     * @param array $data
+     * @return array
      */
-    public function definition_after_data($mform) {
-        if (!empty($this->get_data()) && !$mform->isSubmitted()) {
-            $element = $mform->getElement('dateitem');
-            $element->setValue($this->get_decoded_data()->dateitem);
-
-            $element = $mform->getElement('fallbackstring');
-            $element->setValue($this->get_decoded_data()->fallbackstring);
-
-            foreach ($this->get_decoded_data()->dateranges as $key => $range) {
-                $mform->setDefault($this->build_element_name('startdate', $key), $range->startdate);
-                $mform->setDefault($this->build_element_name('enddate', $key), $range->enddate);
-                $mform->setDefault($this->build_element_name('datestring', $key), $range->datestring);
-                $mform->setDefault($this->build_element_name('recurring', $key), $range->recurring);
-            }
-        }
-
-        parent::definition_after_data($mform);
-    }
-
-    /**
-     * Performs validation on the element values.
-     *
-     * @param array $data the submitted data
-     * @param array $files the submitted files
-     * @return array the validation errors
-     */
-    public function validate_form_elements($data, $files) {
-        $errors = parent::validate_form_elements($data, $files);
+    public function validate(array $data): array {
+        $errors = [];
+        $repeats = (int)($data['repeats'] ?? 0);
 
         // Check if at least one range is set.
         $error = get_string('error:atleastone', 'customcertelement_daterange');
-
-        for ($i = 0; $i < $data['repeats']; $i++) {
+        for ($i = 0; $i < $repeats; $i++) {
             if (empty($data['rangedelete'][$i])) {
                 $error = '';
             }
         }
-
         if (!empty($error)) {
             $errors['help'] = $error;
         }
 
-        // Check that datestring is set dataranges what aren't need to be deleted.
-        for ($i = 0; $i < $data['repeats']; $i++) {
-            // Skip elements that needs to be deleted.
+        // Check ranges that are not marked for deletion.
+        for ($i = 0; $i < $repeats; $i++) {
             if (!empty($data['rangedelete'][$i])) {
                 continue;
             }
 
             if (empty($data['datestring'][$i])) {
-                $name = $this->build_element_name('datestring', $i);
-                $errors[$name] = get_string('error:datestring', 'customcertelement_daterange');
+                $errors[$this->build_element_name('datestring', $i)] = get_string(
+                    'error:datestring',
+                    'customcertelement_daterange'
+                );
             }
 
-            // Check that end date is correctly set.
-            if ($data['startdate'][$i] >= $data['enddate'][$i]) {
+            if (($data['startdate'][$i] ?? 0) >= ($data['enddate'][$i] ?? 0)) {
                 $errors[$this->build_element_name('enddate', $i)] = get_string('error:enddate', 'customcertelement_daterange');
             }
 
-            $rangeperiod = $data['enddate'][$i] - $data['startdate'][$i];
-
-            // Check that recurring dateranges are not longer than 12 months.
+            $rangeperiod = ($data['enddate'][$i] ?? 0) - ($data['startdate'][$i] ?? 0);
             if (!empty($data['recurring'][$i]) && $rangeperiod >= self::MAX_RECURRING_PERIOD) {
                 $errors[$this->build_element_name('enddate', $i)] = get_string('error:recurring', 'customcertelement_daterange');
             }
@@ -290,42 +300,61 @@ class element extends \mod_customcert\element {
     }
 
     /**
-     * This will handle how form data will be saved into the data column in the
-     * customcert_elements table.
+     * Prepare the form by populating the fields from stored data.
      *
-     * @param \stdClass $data the form data
-     * @return string the json encoded array
+     * @param MoodleQuickForm $mform
+     * @return void
      */
-    public function save_unique_data($data) {
-        $arrtostore = [
-            'dateitem' => $data->dateitem,
-            'fallbackstring' => $data->fallbackstring,
-            'dateranges' => [],
-        ];
-
-        for ($i = 0; $i < $data->repeats; $i++) {
-            if (empty($data->rangedelete[$i])) {
-                $arrtostore['dateranges'][] = [
-                    'startdate' => $data->startdate[$i],
-                    'enddate' => $data->enddate[$i],
-                    'datestring' => $data->datestring[$i],
-                    'recurring' => !empty($data->recurring[$i]),
-                ];
-            }
+    public function prepare_form(MoodleQuickForm $mform): void {
+        $payload = $this->get_payload();
+        if (empty($payload)) {
+            return;
         }
 
-        // Encode these variables before saving into the DB.
-        return json_encode($arrtostore);
+        if (isset($payload['dateitem'])) {
+            $mform->getElement('dateitem')->setValue($payload['dateitem']);
+        }
+
+        if (isset($payload['fallbackstring'])) {
+            $mform->getElement('fallbackstring')->setValue($payload['fallbackstring']);
+        }
+
+        if (isset($payload['font'])) {
+            $mform->setDefault('font', $payload['font']);
+        }
+
+        if (isset($payload['fontsize'])) {
+            $mform->setDefault('fontsize', $payload['fontsize']);
+        }
+
+        if (isset($payload['colour'])) {
+            $mform->setDefault('colour', $payload['colour']);
+        }
+
+        if (isset($payload['width'])) {
+            $mform->setDefault('width', $payload['width']);
+        }
+
+        if (!empty($payload['dateranges']) && is_array($payload['dateranges'])) {
+            foreach ($payload['dateranges'] as $key => $range) {
+                $range = (object)$range;
+                $mform->setDefault($this->build_element_name('startdate', $key), $range->startdate ?? 0);
+                $mform->setDefault($this->build_element_name('enddate', $key), $range->enddate ?? 0);
+                $mform->setDefault($this->build_element_name('datestring', $key), $range->datestring ?? '');
+                $mform->setDefault($this->build_element_name('recurring', $key), !empty($range->recurring));
+            }
+        }
     }
 
     /**
      * Handles rendering the element on the pdf.
      *
-     * @param \pdf $pdf the pdf object
+     * @param pdf $pdf the pdf object
      * @param bool $preview true if it is a preview, false otherwise
-     * @param \stdClass $user the user we are rendering this for
+     * @param stdClass $user the user we are rendering this for
+     * @param element_renderer|null $renderer the renderer service
      */
-    public function render($pdf, $preview, $user) {
+    public function render(pdf $pdf, bool $preview, stdClass $user, ?element_renderer $renderer = null): void {
         global $DB;
 
         // If there is no element data, we have nothing to display.
@@ -333,8 +362,10 @@ class element extends \mod_customcert\element {
             return;
         }
 
+        $payload = $this->get_payload();
+        $dateitem = $payload['dateitem'] ?? '';
         $courseid = element_helper::get_courseid($this->id);
-        $dateitem = $this->get_decoded_data()->dateitem;
+        $date = null;
 
         // If we are previewing this certificate then just show a demonstration date.
         if ($preview) {
@@ -343,13 +374,13 @@ class element extends \mod_customcert\element {
             // Get the page.
             $page = $DB->get_record('customcert_pages', ['id' => $this->get_pageid()], '*', MUST_EXIST);
             // Get the customcert this page belongs to.
-            $customcert = $DB->get_record('customcert', ['templateid' => $page->templateid], '*', MUST_EXIST);
+            $customcert = (new certificate_repository())->get_by_template_id_or_fail((int)$page->templateid);
             // Now we can get the issue for this user.
             $issue = $DB->get_record(
                 'customcert_issues',
                 ['userid' => $user->id, 'customcertid' => $customcert->id],
                 '*',
-                MUST_EXIST
+                IGNORE_MULTIPLE
             );
 
             switch ($dateitem) {
@@ -394,8 +425,8 @@ class element extends \mod_customcert\element {
                     break;
 
                 default:
-                    if (strpos($dateitem, 'gradeitem:') === 0) {
-                        $gradeitemid = substr($dateitem, 10);
+                    if (strpos((string)$dateitem, 'gradeitem:') === 0) {
+                        $gradeitemid = (int)substr((string)$dateitem, 10);
                         $grade = element_helper::get_grade_item_info(
                             $gradeitemid,
                             $dateitem,
@@ -417,7 +448,12 @@ class element extends \mod_customcert\element {
 
         // Ensure that a date has been set.
         if (!empty($date)) {
-            element_helper::render_content($pdf, $this, $this->get_daterange_string($date));
+            $content = $this->get_daterange_string((int)$date);
+            if ($renderer) {
+                $renderer->render_content($this, $content);
+            } else {
+                element_helper::render_content($pdf, $this, $content);
+            }
         }
     }
 
@@ -428,13 +464,15 @@ class element extends \mod_customcert\element {
      *
      * @return string
      */
-    protected function get_daterange_string($date) {
+    protected function get_daterange_string(int $date): string {
         $matchedrange = null;
         $outputstring = '';
-        $formatdata = [];
-        $formatdata['date'] = $date;
+        $formatdata = ['date' => $date];
+        $payload = $this->get_payload();
+        $ranges = $payload['dateranges'] ?? [];
 
-        foreach ($this->get_decoded_data()->dateranges as $key => $range) {
+        foreach ($ranges as $range) {
+            $range = (object)$range;
             if ($this->is_recurring_range($range)) {
                 if ($matchedrange = $this->get_matched_recurring_range($date, $range)) {
                     $outputstring = $matchedrange->datestring;
@@ -442,17 +480,15 @@ class element extends \mod_customcert\element {
                     $formatdata['recurringrange'] = $matchedrange;
                     break;
                 }
-            } else {
-                if ($this->is_date_in_range($date, $range)) {
-                    $outputstring = $range->datestring;
-                    $formatdata['range'] = $range;
-                    break;
-                }
+            } else if ($this->is_date_in_range($date, $range)) {
+                $outputstring = $range->datestring;
+                $formatdata['range'] = $range;
+                break;
             }
         }
 
-        if (empty($outputstring) && !empty($this->get_decoded_data()->fallbackstring)) {
-            $outputstring = $this->get_decoded_data()->fallbackstring;
+        if (empty($outputstring) && !empty($payload['fallbackstring'])) {
+            $outputstring = $payload['fallbackstring'];
         }
 
         return $this->format_date_string($outputstring, $formatdata);
@@ -465,7 +501,7 @@ class element extends \mod_customcert\element {
      *
      * @return bool
      */
-    protected function is_recurring_range(\stdClass $range) {
+    protected function is_recurring_range(stdClass $range): bool {
         return !empty($range->recurring);
     }
 
@@ -477,7 +513,7 @@ class element extends \mod_customcert\element {
      *
      * @return bool
      */
-    protected function is_date_in_range($date, \stdClass $range) {
+    protected function is_date_in_range(int $date, stdClass $range): bool {
         return ($date >= $range->startdate && $date <= $range->enddate);
     }
 
@@ -489,7 +525,7 @@ class element extends \mod_customcert\element {
      *
      * @return bool
      */
-    protected function is_date_in_recurring_range($date, \stdClass $range) {
+    protected function is_date_in_recurring_range(int $date, stdClass $range): bool {
         $intdate = $this->build_number_from_date($date);
         $intstart = $this->build_number_from_date($range->startdate);
         $intend = $this->build_number_from_date($range->enddate);
@@ -518,7 +554,7 @@ class element extends \mod_customcert\element {
      *
      * @return bool
      */
-    protected function has_turn_of_the_year(\stdClass $reccurringrange) {
+    protected function has_turn_of_the_year(stdClass $reccurringrange): bool {
         return date('Y', $reccurringrange->startdate) != date('Y', $reccurringrange->enddate);
     }
 
@@ -530,7 +566,7 @@ class element extends \mod_customcert\element {
      *
      * @return bool
      */
-    protected function in_start_year($date, \stdClass $range) {
+    protected function in_start_year(int $date, stdClass $range): bool {
         $intdate = $this->build_number_from_date($date);
         $intstart = $this->build_number_from_date($range->startdate);
         $intend = $this->build_number_from_date($range->enddate);
@@ -546,7 +582,7 @@ class element extends \mod_customcert\element {
      *
      * @return bool
      */
-    protected function in_end_year($date, \stdClass $range) {
+    protected function in_end_year(int $date, stdClass $range): bool {
         $intdate = $this->build_number_from_date($date);
         $intstart = $this->build_number_from_date($range->startdate);
         $intend = $this->build_number_from_date($range->enddate);
@@ -566,7 +602,7 @@ class element extends \mod_customcert\element {
      *
      * @return \stdClass || null
      */
-    protected function get_matched_recurring_range($date, \stdClass $range) {
+    protected function get_matched_recurring_range(int $date, stdClass $range): ?stdClass {
         if (!$this->is_date_in_recurring_range($date, $range)) {
             return null;
         }
@@ -608,7 +644,7 @@ class element extends \mod_customcert\element {
      *
      * @return int
      */
-    protected function build_number_from_date($date) {
+    protected function build_number_from_date(int $date): int {
         return (int)date('md', $date);
     }
 
@@ -651,7 +687,7 @@ class element extends \mod_customcert\element {
      *
      * @return array
      */
-    protected function get_placeholders() {
+    protected function get_placeholders(): array {
         return [
             self::CURRENT_YEAR_PLACEHOLDER => date('Y', time()),
         ];
@@ -664,7 +700,7 @@ class element extends \mod_customcert\element {
      *
      * @return array
      */
-    protected function get_date_placeholders($date) {
+    protected function get_date_placeholders(int $date): array {
         return [
             self::DATE_YEAR_PLACEHOLDER => date('Y', $date),
         ];
@@ -677,7 +713,7 @@ class element extends \mod_customcert\element {
      *
      * @return array
      */
-    protected function get_range_placeholders(\stdClass $range) {
+    protected function get_range_placeholders(stdClass $range): array {
         return [
             self::RANGE_FIRST_YEAR_PLACEHOLDER => date('Y', $range->startdate),
             self::RANGE_LAST_YEAR_PLACEHOLDER => date('Y', $range->enddate),
@@ -691,7 +727,7 @@ class element extends \mod_customcert\element {
      *
      * @return array
      */
-    protected function get_recurring_range_placeholders(\stdClass $range) {
+    protected function get_recurring_range_placeholders(stdClass $range): array {
         return [
             self::RECUR_RANGE_FIRST_YEAR_PLACEHOLDER => date('Y', $range->startdate),
             self::RECUR_RANGE_LAST_YEAR_PLACEHOLDER => date('Y', $range->enddate),
@@ -704,45 +740,43 @@ class element extends \mod_customcert\element {
      * This function is used to render the element when we are using the
      * drag and drop interface to position it.
      *
+     * @param element_renderer|null $renderer the renderer service
      * @return string the html
      */
-    public function render_html() {
+    public function render_html(?element_renderer $renderer = null): string {
         // If there is no element data, we have nothing to display.
         if (empty($this->get_data())) {
-            return;
+            return '';
         }
 
-        return element_helper::render_html_content($this, get_string('preview', 'customcertelement_daterange', $this->get_name()));
+        $content = $this->get_daterange_string(time());
+        if ($renderer) {
+            return (string)$renderer->render_content($this, $content);
+        }
+
+        return element_helper::render_html_content($this, $content);
     }
 
     /**
-     * This function is responsible for handling the restoration process of the element.
+     * Handle restoring references after backup.
      *
-     * We will want to update the course module the date element is pointing to as it will
-     * have changed in the course restore.
-     *
-     * @param \restore_customcert_activity_task $restore
+     * @param restore_customcert_activity_task $restore
+     * @return void
      */
-    public function after_restore($restore) {
+    public function after_restore_from_backup(restore_customcert_activity_task $restore): void {
         global $DB;
 
-        $dateinfo = json_decode($this->get_data());
-
-        $isgradeitem = false;
-        $oldid = $dateinfo->dateitem;
-        if (str_starts_with($dateinfo->dateitem, 'gradeitem:')) {
-            $isgradeitem = true;
-            $oldid = str_replace('gradeitem:', '', $dateinfo->dateitem);
+        $data = $this->get_payload();
+        if (empty($data['dateitem'])) {
+            return;
         }
 
-        $itemname = $isgradeitem ? 'grade_item' : 'course_module';
-        if ($newitem = \restore_dbops::get_backup_ids_record($restore->get_restoreid(), $itemname, $oldid)) {
-            $dateinfo->dateitem = '';
-            if ($isgradeitem) {
-                $dateinfo->dateitem = 'gradeitem:';
-            }
-            $dateinfo->dateitem = $dateinfo->dateitem . $newitem->newitemid;
-            $DB->set_field('customcert_elements', 'data', $this->save_unique_data($dateinfo), ['id' => $this->get_id()]);
+        $isgradeitem = str_starts_with((string)$data['dateitem'], 'gradeitem:');
+        $oldid = $isgradeitem ? substr((string)$data['dateitem'], 10) : $data['dateitem'];
+        $newid = $restore->get_mappingid($isgradeitem ? 'grade_item' : 'course_module', (int)$oldid);
+        if ($newid) {
+            $data['dateitem'] = ($isgradeitem ? 'gradeitem:' : '') . $newid;
+            $DB->set_field('customcert_elements', 'data', json_encode($data), ['id' => $this->get_id()]);
         }
     }
 }

@@ -129,6 +129,8 @@ $string['mobile'] = 'Mobile';
 $string['mobiledesc'] = 'Enter Mobile No. Ex: +5598912341234';
 $string['mail'] = 'E-Mail';
 $string['maildesc'] = 'Company support e-mail';
+$string['tiktok'] = 'TikTok URL';
+$string['tiktokdesc'] = 'Enter the URL of your TikTok. (i.e http://www.tiktok.com/@myinstitution)';
 $string['facebook'] = 'Facebook URL';
 $string['facebookdesc'] = 'Enter the URL of your Facebook. (i.e http://www.facebook.com/myinstitution)';
 $string['twitter'] = 'Twitter URL';
@@ -139,6 +141,8 @@ $string['youtube'] = 'Youtube URL';
 $string['youtubedesc'] = 'Enter the URL of your Youtube. (i.e https://www.youtube.com/user/myinstitution)';
 $string['instagram'] = 'Instagram URL';
 $string['instagramdesc'] = 'Enter the URL of your Instagram. (i.e https://www.instagram.com/myinstitution)';
+$string['pinterest'] = 'Pinterest URL';
+$string['pinterestdesc'] = 'Enter the URL of your Pinterest. (i.e http://www.pinterest.com/myinstitution)';
 $string['whatsapp'] = 'Whatsapp number';
 $string['whatsappdesc'] = 'Enter your whatsapp number for contact.';
 $string['telegram'] = 'Telegram';
@@ -184,3 +188,17 @@ $string['privacy:thememoovesettings_enableaccessibilitytoolbar'] = 'The current 
 
 $string['redirectmessage'] = 'This page should automatically redirect.';
 $string['redirectbtntext'] = 'If nothing is happening please click here to continue.';
+
+$string['ourpartners'] = 'Our Partners';
+$string['ourpartnersdesc'] = 'These are our partners who help Moodle and the community grow.';
+
+$string['readspeaker_text'] = '<strong>Do you know the block ReadSpeaker?</strong> It\'s a great resource that can help your students\' learning.';
+$string['readspeaker_link'] = 'Learn more about ReadSpeaker';
+
+$string['darkmodesettings'] = 'Dark mode';
+$string['darkmode_enable'] = 'Enable dark mode';
+$string['logodark'] = 'Logo dark';
+$string['logodarkdesc'] = 'Logo displayed in the header when dark mode is enabled.';
+
+$string['mylearning'] = 'My learning';
+$string['nolearning'] = 'You haven\'t started your learning yet';

@@ -24,11 +24,9 @@
 
 namespace theme_moove\output\core;
 
-use theme_config;
-use core\context\course as context_course;
-use moodle_url;
-use html_writer;
-use theme_moove\output\core_course\activity_navigation;
+defined('MOODLE_INTERNAL') || die();
+
+require_once($CFG->dirroot . '/admin/renderer.php');
 
 /**
  * Standard HTML output renderer for core_admin subsystem.
@@ -47,9 +45,10 @@ class admin_renderer extends \core_admin_renderer {
      * @param bool $cronoverdue warn cron not running
      * @param bool $dbproblems warn db has problems
      * @param bool $maintenancemode warn in maintenance mode
-     * @param bool $buggyiconvnomb warn iconv problems
      * @param array|null $availableupdates array of \core\update\info objects or null
      * @param int|null $availableupdatesfetch timestamp of the most recent updates fetch or null (unknown)
+     * @param bool $buggyiconvnomb warn iconv problems
+     * @param boolean $registered true if the site is registered on Moodle.org
      * @param string[] $cachewarnings An array containing warnings from the Cache API.
      * @param array $eventshandlers Events 1 API handlers.
      * @param bool $themedesignermode Warn about the theme designer mode.
@@ -89,15 +88,17 @@ class admin_renderer extends \core_admin_renderer {
         bool $showservicesandsupport = false,
         $xmlrpcwarning = ''
     ) {
-
         global $CFG;
         $output = '';
 
         $output .= $this->header();
         $output .= $this->output->heading(get_string('notifications', 'admin'));
         $output .= $this->conectime_services_and_support_content();
+        $output .= $this->conectime_partners_content();
         $output .= $this->maturity_info($maturity);
-        $output .= empty($CFG->disableupdatenotifications) ? $this->available_updates($availableupdates, $availableupdatesfetch) : '';
+        $output .= empty($CFG->disableupdatenotifications) ?
+                        $this->available_updates($availableupdates, $availableupdatesfetch)
+                        : '';
         $output .= $this->insecure_dataroot_warning($insecuredataroot);
         $output .= $this->development_libs_directories_warning($devlibdir);
         $output .= $this->themedesignermode_warning($themedesignermode);
@@ -114,15 +115,10 @@ class admin_renderer extends \core_admin_renderer {
         $output .= $this->mobile_configuration_warning($mobileconfigured);
         $output .= $this->forgotten_password_url_warning($invalidforgottenpasswordurl);
         $output .= $this->mnet_deprecation_warning($xmlrpcwarning);
-        $output .= $this->moodlenet_removal_warning();
         $output .= $this->userfeedback_encouragement($showfeedbackencouragement);
-        // $output .= $this->services_and_support_content($showservicesandsupport);
         $output .= $this->campaign_content($showcampaigncontent);
-
-        //////////////////////////////////////////////////////////////////////////////////////////////////
-        ////  IT IS ILLEGAL AND A VIOLATION OF THE GPL TO HIDE, REMOVE OR MODIFY THIS COPYRIGHT NOTICE ///
+        // It is illegal and a violation of the GPL to hide, remove or modify this copyright notice.
         $output .= $this->moodle_copyright();
-        //////////////////////////////////////////////////////////////////////////////////////////////////
 
         $output .= $this->footer();
 
@@ -135,6 +131,15 @@ class admin_renderer extends \core_admin_renderer {
      * @return string the campaign content raw html.
      */
     private function conectime_services_and_support_content(): string {
-        return $this->render_from_template('theme_moove/conectime_services_and_support_content_banner', []);
+        return $this->render_from_template('theme_moove/moove/conectime_services_and_support_content_banner', []);
+    }
+
+    /**
+     * Display services and support content.
+     *
+     * @return string the campaign content raw html.
+     */
+    private function conectime_partners_content(): string {
+        return $this->render_from_template('theme_moove/moove/conectime_partners_banner', []);
     }
 }

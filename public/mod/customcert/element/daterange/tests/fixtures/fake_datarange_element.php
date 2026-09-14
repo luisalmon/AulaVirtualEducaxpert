@@ -37,7 +37,7 @@ class fake_datarange_element extends \customcertelement_daterange\element {
      *
      * @return string
      */
-    public function get_daterange_string($date) {
+    public function get_daterange_string(int $date): string {
         $result = parent::get_daterange_string($date);
         return $result;
     }

@@ -1570,8 +1570,12 @@ class framework implements \H5PFrameworkInterface {
         $DB->execute("
             UPDATE {hvp}
             SET filtered = null
-            WHERE main_library_id $insql",
-            $inparams
+            WHERE id IN (
+                SELECT DISTINCT cl.hvp_id
+                FROM {hvp_contents_libraries} cl
+                WHERE library_id $insql
+            )",
+          $inparams
         );
     }
 
@@ -1592,13 +1596,13 @@ class framework implements \H5PFrameworkInterface {
      * Implements getNumContent().
      */
     // @codingStandardsIgnoreLine
-    public function getNumContent($libraryid, $skip = NULL) {
+    public function getNumContent($libraryid, $skip = NULL, $lastid = 0) {
         global $DB;
         $skipquery = empty($skip) ? '' : " AND id NOT IN ($skip)";
 
         return (int) $DB->get_field_sql(
-                "SELECT COUNT(id) FROM {hvp} WHERE main_library_id = ?{$skipquery}",
-                array($libraryid));
+                "SELECT COUNT(id) FROM {hvp} WHERE main_library_id = ? AND id > ?{$skipquery}",
+                array($libraryid, $lastid));
     }
 
     /**

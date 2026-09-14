@@ -18,8 +18,8 @@
  * Core renderer.
  *
  * @package     theme_trema
- * @copyright   2019-2025 Trema - {@link https://trema.tech/}
- * @copyright   2023-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2019-2026 Trema - {@link https://trema.tech/}
+ * @copyright   2023-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -40,8 +40,8 @@ require_once($CFG->dirroot . '/course/format/lib.php');
  * Class core_renderer.
  *
  * @package theme_trema
- * @copyright   2019-2025 Trema - {@link https://trema.tech/}
- * @copyright   2023-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2019-2026 Trema - {@link https://trema.tech/}
+ * @copyright   2023-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -78,17 +78,19 @@ class core_renderer extends \theme_boost\output\core_renderer {
         }
 
         // If no favicon found yet, check favicon settings in Moodle's Appearance/Logo settings.
-        // Note: Only available in Moodle 4.1+.
-        if (empty($favicon) && $CFG->branch >= 401) {
-            // Use $CFG->themerev to prevent browser caching when the file changes.
-            $favicon = \moodle_url::make_pluginfile_url(
-                \context_system::instance()->id,
-                'core_admin',
-                'favicon',
-                '64x64/',
-                theme_get_revision(),
-                get_config('core_admin', 'favicon')
-            );
+        if (empty($favicon)) {
+            $corefavicon = get_config('core_admin', 'favicon');
+            if (!empty($corefavicon)) {
+                // Use $CFG->themerev to prevent browser caching when the file changes.
+                $favicon = \moodle_url::make_pluginfile_url(
+                    \context_system::instance()->id,
+                    'core_admin',
+                    'favicon',
+                    '64x64/',
+                    theme_get_revision(),
+                    $corefavicon
+                );
+            }
         }
 
         // If still no favicon found, fallback to the webserver's favicon.ico.
@@ -208,6 +210,10 @@ class core_renderer extends \theme_boost\output\core_renderer {
         $context->sitename = $sitename;
 
         $context->loginpagecreatefirst = get_config('theme_trema', 'loginpagecreatefirst');
+
+        // MDL-87546 (Moodle 5.2) dropped $data->hasinstructions from core_auth\output\login::export_for_template().
+        // Restore the flag so the "First time here?" panel keeps rendering on 4.1+ (idempotent on releases that still set it).
+        $context->hasinstructions = !empty($context->instructions) || !empty($context->cansignup);
 
         return $this->render_from_template('core/loginform', $context);
     }

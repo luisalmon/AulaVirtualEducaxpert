@@ -543,9 +543,10 @@ interface H5PFrameworkInterface {
    *
    * @param int $libraryId
    * @param array $skip
+   * @param int $lastId
    * @return int
    */
-  public function getNumContent($libraryId, $skip = NULL);
+  public function getNumContent($libraryId, $skip = NULL, $lastId = 0);
 
   /**
    * Determines if content slug is used.

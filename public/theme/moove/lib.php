@@ -71,19 +71,30 @@ function theme_moove_get_extra_scss($theme) {
     $content = '';
 
     // Sets the login background image.
-    $loginbgimgurl = $theme->setting_file_url('loginbgimg', 'loginbgimg');
-
-    if (empty($loginbgimgurl)) {
-        $loginbgimgurl = new \moodle_url('/theme/moove/pix/loginbg.png');
-        $loginbgimgurl->out();
+    $loginbackgroundimageurl = $theme->setting_file_url('loginbgimg', 'loginbgimg');
+    $backgroundposition = '';
+    $isdefaultloginimage = empty($loginbackgroundimageurl);
+    if ($isdefaultloginimage) {
+        // Use the default login background image.
+        $loginbackgroundimageurl = $theme->image_url(
+            'login_background',
+            'theme',
+        );
+        // Set the default background position to center.
+        $backgroundposition = 'background-position: center;';
     }
-
-    $content .= 'body.pagelayout-login #page { ';
-    $content .= "background-image: url('$loginbgimgurl'); background-size: cover;";
+    $content .= 'body.pagelayout-login #page .login-layout-left { ';
+    $content .= "background-image: url('$loginbackgroundimageurl'); ";
+    $content .= "background-size: cover; {$backgroundposition}";
     $content .= ' }';
 
+    // Remove the watermark to indicate the image is AI-generated when not the default Moodle image.
+    if (!$isdefaultloginimage) {
+        $content .= 'body.pagelayout-login #page .login-layout-left::after { display: none !important; }';
+    }
+
     // Always return the background image with the scss when we have it.
-    return !empty($theme->settings->scss) ? $theme->settings->scss . ' ' . $content : $content;
+    return !empty($theme->settings->scss) ? "{$theme->settings->scss}  \n  {$content}" : $content;
 }
 
 /**
@@ -112,9 +123,9 @@ function theme_moove_get_pre_scss($theme) {
             continue;
         }
 
-        array_map(function($target) use (&$scss, $value) {
+        array_map(function ($target) use (&$scss, $value) {
             if ($target == 'fontsite') {
-                $scss .= '$' . $target . ': "' . $value . '", sans-serif !default' .";\n";
+                $scss .= '$' . $target . ': "' . $value . '", sans-serif !default' . ";\n";
             } else {
                 $scss .= '$' . $target . ': ' . $value . ";\n";
             }
@@ -155,8 +166,10 @@ function theme_moove_get_precompiled_css() {
 function theme_moove_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, array $options = []) {
     $theme = theme_config::load('moove');
 
-    if ($context->contextlevel == CONTEXT_SYSTEM &&
-        ($filearea === 'logo' || $filearea === 'loginbgimg' || $filearea == 'favicon')) {
+    if (
+        $context->contextlevel == CONTEXT_SYSTEM &&
+        ($filearea === 'logo' || $filearea === 'loginbgimg' || $filearea == 'favicon')
+    ) {
         $theme = theme_config::load('moove');
         // By default, theme files must be cache-able by both browsers and proxies.
         if (!array_key_exists('cacheability', $options)) {
@@ -203,7 +216,7 @@ function theme_moove_pluginfile($course, $cm, $context, $filearea, $args, $force
 function theme_moove_serve_hvp_css($filename, $theme) {
     global $CFG, $PAGE;
 
-    require_once($CFG->dirroot.'/lib/configonlylib.php'); // For min_enable_zlib_compression().
+    require_once($CFG->dirroot . '/lib/configonlylib.php'); // For minenable_zlib_compression function.
 
     $PAGE->set_context(\core\context\system::instance());
     $themename = $theme->name;
@@ -230,16 +243,16 @@ function theme_moove_serve_hvp_css($filename, $theme) {
 
     header('HTTP/1.1 200 OK');
 
-    header('Etag: "'.$md5content.'"');
-    header('Content-Disposition: inline; filename="'.$filename.'"');
-    header('Last-Modified: '.gmdate('D, d M Y H:i:s', $lastmodified).' GMT');
-    header('Expires: '.gmdate('D, d M Y H:i:s', time() + $lifetime).' GMT');
+    header('Etag: "' . $md5content . '"');
+    header('Content-Disposition: inline; filename="' . $filename . '"');
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $lastmodified) . ' GMT');
+    header('Expires: ' . gmdate('D, d M Y H:i:s', time() + $lifetime) . ' GMT');
     header('Pragma: ');
-    header('Cache-Control: public, max-age='.$lifetime);
+    header('Cache-Control: public, max-age=' . $lifetime);
     header('Accept-Ranges: none');
     header('Content-Type: text/css; charset=utf-8');
     if (!min_enable_zlib_compression()) {
-        header('Content-Length: '.strlen($content));
+        header('Content-Length: ' . strlen($content));
     }
 
     echo $content;

@@ -26,10 +26,15 @@
 namespace mod_customcert;
 
 use completion_info;
+use context_course;
 use context_module;
 use stdClass;
-use context_course;
 use advanced_testcase;
+use mod_customcert\service\certificate_email_service;
+use mod_customcert\service\certificate_issue_service;
+use mod_customcert\service\certificate_issuer_service;
+use mod_customcert\service\template_repository;
+use mod_customcert\service\template_service;
 use mod_customcert\task\email_certificate_task;
 use mod_customcert\task\issue_certificates_task;
 
@@ -52,6 +57,806 @@ final class email_certificate_task_test extends advanced_testcase {
         set_config('certificateexecutionperiod', 0, 'customcert');
 
         parent::setUp();
+    }
+
+    /**
+     * Tests the issuer service end-to-end for a single student.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service
+     * @covers \mod_customcert\service\certificate_email_service
+     */
+    public function test_certificate_issuer_service_processes_run(): void {
+        global $CFG, $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create a student and enrol them.
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a custom certificate.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Build a minimal template with one element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        // Run the issuer service directly.
+        $sink = $this->redirectEmails();
+        $issuer = certificate_issuer_service::create();
+        $issuer->process_email_issuance_run();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        // Confirm the issue was created and emailed.
+        $issues = $DB->get_records('customcert_issues');
+        $this->assertCount(1, $issues);
+        $issue = reset($issues);
+        $this->assertEquals(1, (int)$issue->emailed);
+        $this->assertEquals($student->id, (int)$issue->userid);
+
+        // Confirm one email to the student.
+        $this->assertCount(1, $emails);
+        $this->assertEquals($CFG->noreplyaddress, $emails[0]->from);
+        $this->assertEquals($student->email, $emails[0]->to);
+    }
+
+    /**
+     * Ensure reusable issuer APIs expose candidates and issue creation without duplication.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service
+     */
+    public function test_certificate_issuer_helpers_list_candidates_and_issue_if_needed(): void {
+        global $DB;
+
+        // Create a course and enrol two students.
+        $course = $this->getDataGenerator()->create_course();
+        $student1 = $this->getDataGenerator()->create_user();
+        $student2 = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id);
+
+        // Create a custom certificate with emailing enabled.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Make the template valid.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $issuer = certificate_issuer_service::create();
+
+        // Pre-issue to one student and mark them as fully handled: since emailstudents is
+        // enabled here, that means both emailed and studentemailed.
+        $issuedid = $this->issue_certificate((int)$customcert->id, (int)$student1->id);
+        $DB->set_field('customcert_issues', 'emailed', 1, ['id' => $issuedid]);
+        $DB->set_field('customcert_issues', 'studentemailed', 1, ['id' => $issuedid]);
+
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+        $this->assertArrayHasKey($student2->id, $candidates);
+        $this->assertArrayNotHasKey($student1->id, $candidates);
+
+        // Existing issue returns same id and emailed flag.
+        $existing = $issuer->issue_if_needed((int)$customcert->id, (int)$student1->id);
+        $this->assertNotNull($existing);
+        $this->assertEquals($issuedid, $existing->id);
+        $this->assertEquals(1, $existing->emailed);
+
+        // New issue is created for the other student.
+        $newissue = $issuer->issue_if_needed((int)$customcert->id, (int)$student2->id);
+        $this->assertNotNull($newissue);
+        $this->assertNotEquals($issuedid, $newissue->id);
+        $this->assertEquals(0, $newissue->emailed);
+
+        // Subsequent calls keep returning the same issue id.
+        $repeat = $issuer->issue_if_needed((int)$customcert->id, (int)$student2->id);
+        $this->assertEquals($newissue->id, $repeat->id);
+    }
+
+    /**
+     * list_email_candidates should ignore certificates without elements.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_requires_elements(): void {
+        // Create a course and enrol a student.
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate with emailing enabled but no elements/pages added.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        $this->assertArrayNotHasKey($student->id, $candidates);
+        $this->assertEmpty($candidates);
+    }
+
+    /**
+     * list_email_candidates should enforce required time before listing users.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_respects_required_time(): void {
+        global $DB;
+
+        // Create a course and enrol a student.
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate requiring 5 minutes in the course and enable emailing.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'requiredtime' => 5,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issuer = certificate_issuer_service::create();
+
+        // With no course time logged, the student should not be listed.
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+        $this->assertArrayNotHasKey($student->id, $candidates);
+
+        // If required time is removed, the user becomes eligible.
+        $DB->set_field('customcert', 'requiredtime', 0, ['id' => $customcert->id]);
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+        $this->assertArrayHasKey($student->id, $candidates);
+    }
+
+    /**
+     * list_email_candidates should not include a user until completion conditions configured on the
+     * certificate itself (core Activity completion, as distinct from Restrict access) are met.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_respects_own_completion_condition_not_met(): void {
+        global $CFG, $DB;
+
+        $CFG->enablecompletion = true;
+
+        // Create a course with completion enabled and enrol a student.
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate that requires viewing the activity to complete it, with no
+        // Restrict access rule configured (completion tracking is the only gating in place).
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+            'completionview' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        // The student has not viewed the certificate yet, so its completion condition is not met.
+        $this->assertArrayNotHasKey($student->id, $candidates);
+    }
+
+    /**
+     * list_email_candidates should include a user once completion conditions configured on the
+     * certificate itself have been met.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_respects_own_completion_condition_met(): void {
+        global $CFG, $DB;
+
+        $CFG->enablecompletion = true;
+
+        // Create a course with completion enabled and enrol a student.
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate that requires viewing the activity to complete it, with no
+        // Restrict access rule configured (completion tracking is the only gating in place).
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+            'completionview' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        // Mark the certificate's own completion condition as met for the student by
+        // simulating a view, since automatic completion recalculates state from the
+        // actual criteria (a bare update_state() call would be recalculated away).
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completion = new completion_info($course);
+        $completion->set_module_viewed($cm, $student->id);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        $this->assertArrayHasKey($student->id, $candidates);
+    }
+
+    /**
+     * list_email_candidates should not include suspended users.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_skips_suspended_users(): void {
+        global $DB;
+
+        // Create a course and enrol two students.
+        $course = $this->getDataGenerator()->create_course();
+        $student1 = $this->getDataGenerator()->create_user();
+        $student2 = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id);
+
+        // Suspend student2.
+        $DB->set_field('user', 'suspended', '1', ['id' => $student2->id]);
+
+        // Create a certificate with emailing enabled.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        // Active student should be a candidate; suspended student should not.
+        $this->assertArrayHasKey($student1->id, $candidates);
+        $this->assertArrayNotHasKey($student2->id, $candidates);
+    }
+
+    /**
+     * list_email_candidates should skip hidden courses when configuration excludes them.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_skips_hidden_course(): void {
+        global $DB;
+
+        set_config('includeinnotvisiblecourses', 0, 'customcert');
+
+        // Create a hidden course and enrol a student.
+        $course = $this->getDataGenerator()->create_course(['visible' => 0]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate in that course.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        $this->assertEmpty($candidates);
+    }
+
+    /**
+     * list_email_candidates should skip hidden activities even when the course is visible.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_skips_hidden_activity(): void {
+        global $DB;
+
+        // Create a course and enrol a student.
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate and then hide the activity.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+        set_coursemodule_visible($customcert->cmid, 0);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        $this->assertEmpty($candidates);
+    }
+
+    /**
+     * list_email_candidates should respect hidden category visibility when includeinnotvisiblecourses is disabled.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_skips_hidden_category_when_excluded(): void {
+        global $DB;
+
+        set_config('includeinnotvisiblecourses', 0, 'customcert');
+
+        // Create a hidden category and a course within it.
+        $category = $this->getDataGenerator()->create_category(['visible' => 0]);
+        $course = $this->getDataGenerator()->create_course(['category' => $category->id]);
+
+        // Create and enrol a student.
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate in that course.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        $this->assertEmpty($candidates);
+    }
+
+    /**
+     * list_email_candidates should include hidden courses when configuration allows them.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::list_email_candidates
+     */
+    public function test_list_email_candidates_allows_hidden_course_when_configured(): void {
+        global $DB;
+
+        set_config('includeinnotvisiblecourses', 1, 'customcert');
+
+        // Create a hidden course and enrol a student.
+        $course = $this->getDataGenerator()->create_course(['visible' => 0]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate in that course.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issuer = certificate_issuer_service::create();
+        $candidates = $issuer->list_email_candidates((int)$customcert->id);
+
+        $this->assertArrayHasKey($student->id, $candidates);
+    }
+
+    /**
+     * process_email_issuance_run should skip courses that ended before the execution period window.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::process_email_issuance_run
+     */
+    public function test_process_run_skips_expired_course_outside_execution_period(): void {
+        global $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+        set_config('certificateexecutionperiod', 1000, 'customcert');
+
+        // Create a course that ended before the execution window.
+        $course = $this->getDataGenerator()->create_course([
+            'startdate' => time() - 4000,
+            'enddate' => time() - 2000,
+        ]);
+
+        // Create and enrol a student.
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate with emailing enabled.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        // Run the issuer service.
+        $sink = $this->redirectEmails();
+        $issuer = certificate_issuer_service::create();
+        $issuer->process_email_issuance_run();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        // Confirm nothing was issued or emailed.
+        $this->assertEmpty($DB->get_records('customcert_issues'));
+        $this->assertCount(0, $emails);
+    }
+
+    /**
+     * queue_or_send_email should queue an adhoc task when configured.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::queue_or_send_email
+     */
+    public function test_queue_or_send_email_queues_adhoc_task(): void {
+        global $DB;
+
+        set_config('useadhoc', 1, 'customcert');
+
+        // Create a course and enrol a student.
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Create a certificate.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        // Create an issue and queue email.
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+
+        $issuer = certificate_issuer_service::create();
+        $issuer->queue_or_send_email((int)$customcert->id, (int)$issueid);
+
+        // Confirm an adhoc task exists with the expected data.
+        $tasks = $DB->get_records('task_adhoc', ['classname' => '\mod_customcert\\task\\email_certificate_task']);
+        $this->assertCount(1, $tasks);
+        $task = reset($tasks);
+        $customdata = json_decode($task->customdata ?? '{}');
+        $this->assertEquals($issueid, $customdata->issueid ?? null);
+        $this->assertEquals($customcert->id, $customdata->customcertid ?? null);
+    }
+
+    /**
+     * queue_or_send_email should send immediately and flag emailed when adhoc is disabled.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::queue_or_send_email
+     */
+    public function test_queue_or_send_email_sends_inline_when_adhoc_disabled(): void {
+        global $CFG, $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+
+        $sink = $this->redirectEmails();
+        $issuer = certificate_issuer_service::create();
+        $issuer->queue_or_send_email((int)$customcert->id, (int)$issueid);
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $issue = $DB->get_record('customcert_issues', ['id' => $issueid], '*', MUST_EXIST);
+        $this->assertEquals(1, (int)$issue->emailed);
+
+        $this->assertCount(1, $emails);
+        $this->assertEquals($CFG->noreplyaddress, $emails[0]->from);
+        $this->assertEquals($student->email, $emails[0]->to);
+    }
+
+    /**
+     * process_email_issuance_run should skip courses that ended before the execution period window.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::process_email_issuance_run
+     */
+    public function test_process_run_skips_hidden_course_when_config_disabled(): void {
+        global $DB;
+
+        set_config('includeinnotvisiblecourses', 0, 'customcert');
+        set_config('useadhoc', 0, 'customcert');
+
+        $course = $this->getDataGenerator()->create_course(['visible' => 0]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $sink = $this->redirectEmails();
+        $issuer = certificate_issuer_service::create();
+        $issuer->process_email_issuance_run();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertEmpty($DB->get_records('customcert_issues'));
+        $this->assertCount(0, $emails);
+    }
+
+    /**
+     * process_email_issuance_run should process hidden courses when config allows them and the user can view them.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::process_email_issuance_run
+     */
+    public function test_process_run_allows_hidden_course_when_config_enabled(): void {
+        global $CFG, $DB;
+
+        set_config('includeinnotvisiblecourses', 1, 'customcert');
+        set_config('useadhoc', 0, 'customcert');
+
+        $course = $this->getDataGenerator()->create_course(['visible' => 0]);
+        $student = $this->getDataGenerator()->create_user();
+        $roleids = $DB->get_records_menu('role', null, '', 'shortname, id');
+        $this->getDataGenerator()->enrol_user($student->id, $course->id, $roleids['student']);
+
+        // Allow the enrolled user to view the hidden course.
+        role_change_permission(
+            $roleids['student'],
+            context_course::instance($course->id),
+            'moodle/course:viewhiddencourses',
+            CAP_ALLOW
+        );
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $sink = $this->redirectEmails();
+        $issuer = certificate_issuer_service::create();
+        $issuer->process_email_issuance_run();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $issues = $DB->get_records('customcert_issues');
+        $this->assertCount(1, $issues);
+        $issue = reset($issues);
+        $this->assertEquals(1, (int)$issue->emailed);
+        $this->assertEquals($student->id, (int)$issue->userid);
+
+        $this->assertCount(1, $emails);
+        $this->assertEquals($CFG->noreplyaddress, $emails[0]->from);
+        $this->assertEquals($student->email, $emails[0]->to);
+    }
+
+    /**
+     * process_email_issuance_run should skip courses in hidden categories when config excludes them.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::process_email_issuance_run
+     */
+    public function test_process_run_skips_hidden_category_when_config_disabled(): void {
+        global $DB;
+
+        set_config('includeinnotvisiblecourses', 0, 'customcert');
+        set_config('useadhoc', 0, 'customcert');
+
+        $category = $this->getDataGenerator()->create_category(['visible' => 0]);
+        $course = $this->getDataGenerator()->create_course(['category' => $category->id]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $sink = $this->redirectEmails();
+        $issuer = certificate_issuer_service::create();
+        $issuer->process_email_issuance_run();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertEmpty($DB->get_records('customcert_issues'));
+        $this->assertCount(0, $emails);
+    }
+
+    /**
+     * process_email_issuance_run should skip hidden activities.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::process_email_issuance_run
+     */
+    public function test_process_run_skips_hidden_activity(): void {
+        global $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        set_coursemodule_visible($customcert->cmid, 0);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        $sink = $this->redirectEmails();
+        $issuer = certificate_issuer_service::create();
+        $issuer->process_email_issuance_run();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertEmpty($DB->get_records('customcert_issues'));
+        $this->assertCount(0, $emails);
+    }
+
+    /**
+     * process_email_issuance_run should respect certificatesperrun and advance/reset the offset.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service::process_email_issuance_run
+     */
+    public function test_process_run_respects_limit_and_offset(): void {
+        global $CFG, $DB;
+
+        set_config('certificatesperrun', 2, 'customcert');
+        set_config('certificate_offset', 0, 'customcert');
+        set_config('useadhoc', 0, 'customcert');
+
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcerts = [];
+        for ($i = 0; $i < 3; $i++) {
+            $customcerts[] = $this->getDataGenerator()->create_module('customcert', [
+                'course' => $course->id,
+                'emailstudents' => 1,
+            ]);
+        }
+
+        foreach ($customcerts as $customcert) {
+            $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+            $templateservice = template_service::create();
+            $pageid = $templateservice->add_page($template);
+            $this->assertDebuggingNotCalled();
+            $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+        }
+
+        // First run should process only two certificates.
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $firstemails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(2, $firstemails);
+        $this->assertEquals(2, get_config('customcert', 'certificate_offset'));
+        $this->assertCount(2, $DB->get_records('customcert_issues'));
+
+        // Second run should process the remaining certificate.
+        $sink = $this->redirectEmails();
+        $task->execute();
+        $secondemails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(1, $secondemails);
+        $this->assertEquals(4, get_config('customcert', 'certificate_offset'));
+        $this->assertCount(3, $DB->get_records('customcert_issues'));
+
+        // Third run should no-op and reset the offset back to zero.
+        $sink = $this->redirectEmails();
+        $task->execute();
+        $thirdemails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(0, $thirdemails);
+        $this->assertEquals(0, get_config('customcert', 'certificate_offset'));
+        $this->assertCount(3, $DB->get_records('customcert_issues'));
+
+        // Ensure emails were sent to the expected recipient each time.
+        $allrunemails = array_merge($firstemails, $secondemails, $thirdemails);
+        $addresses = array_map(fn($email) => $email->to, $allrunemails);
+        foreach ($addresses as $to) {
+            $this->assertEquals($student->email, $to);
+        }
+
+        // Confirm sender is noreply.
+        foreach ($allrunemails as $email) {
+            $this->assertEquals($CFG->noreplyaddress, $email->from);
+        }
     }
 
     /**
@@ -111,14 +916,12 @@ final class email_certificate_task_test extends advanced_testcase {
         $customcert = $this->getDataGenerator()->create_module('customcert', ['course' => $course->id, 'emailstudents' => 1]);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -167,14 +970,12 @@ final class email_certificate_task_test extends advanced_testcase {
             'emailstudents' => 1]);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -183,7 +984,7 @@ final class email_certificate_task_test extends advanced_testcase {
         $DB->insert_record('customcert_elements', $element);
 
         // Ok, now issue this to one user.
-        \mod_customcert\certificate::issue_certificate($customcert->id, $user1->id);
+        $this->issue_certificate((int)$customcert->id, (int)$user1->id);
 
         // Confirm there is only one entry in this table.
         $this->assertEquals(1, $DB->count_records('customcert_issues'));
@@ -250,14 +1051,12 @@ final class email_certificate_task_test extends advanced_testcase {
         role_change_permission($role->id, context_module::instance($customcert->cmid), 'mod/customcert:receiveissue', CAP_ALLOW);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($SITE->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -266,7 +1065,7 @@ final class email_certificate_task_test extends advanced_testcase {
         $DB->insert_record('customcert_elements', $element);
 
         // Ok, now issue this to one user.
-        \mod_customcert\certificate::issue_certificate($customcert->id, $user1->id);
+        $this->issue_certificate((int)$customcert->id, (int)$user1->id);
 
         // Confirm there is only one entry in this table.
         $this->assertEquals(1, $DB->count_records('customcert_issues'));
@@ -335,25 +1134,29 @@ final class email_certificate_task_test extends advanced_testcase {
         // Enrol one of the users as a teacher.
         $this->getDataGenerator()->enrol_user($user3->id, $course->id, $roleids['editingteacher']);
 
-        // Create a custom certificate.
+        // Create a custom certificate. Note emailstudents is not set, so certificates must not be
+        // manufactured on the students' behalf -- only students who trigger issuance themselves
+        // (e.g. by viewing the certificate) should be notified about.
         $customcert = $this->getDataGenerator()->create_module('customcert', ['course' => $course->id,
             'emailteachers' => 1]);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
         $element->pageid = $pageid;
         $element->name = 'Image';
         $DB->insert_record('customcert_elements', $element);
+
+        // Both students issue their own certificate (e.g. by viewing it) before the task runs.
+        $this->issue_certificate((int)$customcert->id, (int)$user1->id);
+        $this->issue_certificate((int)$customcert->id, (int)$user2->id);
 
         // Run the task.
         $sink = $this->redirectEmails();
@@ -370,6 +1173,107 @@ final class email_certificate_task_test extends advanced_testcase {
 
         $this->assertEquals($CFG->noreplyaddress, $emails[1]->from);
         $this->assertEquals($user3->email, $emails[1]->to);
+    }
+
+    /**
+     * Tests that the email certificate task does not manufacture certificates for students who
+     * have never triggered issuance themselves, merely because emailteachers is enabled.
+     *
+     * @covers \mod_customcert\task\issue_certificates_task
+     * @covers \mod_customcert\task\email_certificate_task
+     */
+    public function test_email_certificates_teachers_does_not_bulk_issue_to_students(): void {
+        global $DB;
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create and enrol two students; neither will view/issue their own certificate.
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($user2->id, $course->id);
+
+        // Create a certificate that only notifies teachers, not students, with no restrictions.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailteachers' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        // Run the task.
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        // Neither student has viewed the certificate, so no certificates should have been issued.
+        $this->assertCount(0, $DB->get_records('customcert_issues'));
+        $this->assertCount(0, $emails);
+    }
+
+    /**
+     * Tests that the email certificate task only notifies teachers about certificates that were
+     * actually issued (e.g. by a student viewing them), and not about students who were merely
+     * eligible but never triggered issuance themselves.
+     *
+     * @covers \mod_customcert\task\issue_certificates_task
+     * @covers \mod_customcert\task\email_certificate_task
+     */
+    public function test_email_certificates_teachers_only_notified_for_self_issued_certificates(): void {
+        global $DB;
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create and enrol two students, plus a teacher.
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        $teacher = $this->getDataGenerator()->create_user(['firstname' => 'Teacher', 'lastname' => 'One']);
+        $roleids = $DB->get_records_menu('role', null, '', 'shortname, id');
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($user2->id, $course->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $roleids['editingteacher']);
+
+        // Create a certificate that only notifies teachers, not students, with no restrictions.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailteachers' => 1,
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        // Only user1 issues their own certificate (e.g. by viewing it); user2 never does.
+        $this->issue_certificate((int)$customcert->id, (int)$user1->id);
+
+        // Run the task.
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        // Only user1's certificate should exist; the task must not have manufactured one for user2.
+        $issues = $DB->get_records('customcert_issues');
+        $this->assertCount(1, $issues);
+        $issue = reset($issues);
+        $this->assertEquals($user1->id, (int)$issue->userid);
+
+        // Only one email, to the teacher, about user1's certificate.
+        $this->assertCount(1, $emails);
+        $this->assertEquals($teacher->email, $emails[0]->to);
     }
 
     /**
@@ -392,25 +1296,29 @@ final class email_certificate_task_test extends advanced_testcase {
         $this->getDataGenerator()->enrol_user($user1->id, $course->id);
         $this->getDataGenerator()->enrol_user($user2->id, $course->id);
 
-        // Create a custom certificate.
+        // Create a custom certificate. Note emailstudents is not set, so certificates must not be
+        // manufactured on the students' behalf -- only students who trigger issuance themselves
+        // (e.g. by viewing the certificate) should be notified about.
         $customcert = $this->getDataGenerator()->create_module('customcert', ['course' => $course->id,
             'emailothers' => 'testcustomcert@example.com, doo@dah']);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
         $element->pageid = $pageid;
         $element->name = 'Image';
         $DB->insert_record('customcert_elements', $element);
+
+        // Both students issue their own certificate (e.g. by viewing it) before the task runs.
+        $this->issue_certificate((int)$customcert->id, (int)$user1->id);
+        $this->issue_certificate((int)$customcert->id, (int)$user2->id);
 
         // Run the task.
         $sink = $this->redirectEmails();
@@ -427,6 +1335,50 @@ final class email_certificate_task_test extends advanced_testcase {
 
         $this->assertEquals($CFG->noreplyaddress, $emails[1]->from);
         $this->assertEquals('testcustomcert@example.com', $emails[1]->to);
+    }
+
+    /**
+     * Tests that the email certificate task does not manufacture certificates for students who
+     * have never triggered issuance themselves, merely because emailothers is enabled.
+     *
+     * @covers \mod_customcert\task\issue_certificates_task
+     * @covers \mod_customcert\task\email_certificate_task
+     */
+    public function test_email_certificates_others_does_not_bulk_issue_to_students(): void {
+        global $DB;
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+
+        // Create and enrol two students; neither will view/issue their own certificate.
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($user1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($user2->id, $course->id);
+
+        // Create a certificate that only notifies an external address, not students, with no restrictions.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailothers' => 'testcustomcert@example.com',
+        ]);
+
+        // Put the certificate in a valid state by adding a page + element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
+
+        // Run the task.
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        // Neither student has viewed the certificate, so no certificates should have been issued.
+        $this->assertCount(0, $DB->get_records('customcert_issues'));
+        $this->assertCount(0, $emails);
     }
 
     /**
@@ -452,14 +1404,12 @@ final class email_certificate_task_test extends advanced_testcase {
         $customcert = $this->getDataGenerator()->create_module('customcert', ['course' => $course->id, 'emailstudents' => 1]);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -468,7 +1418,7 @@ final class email_certificate_task_test extends advanced_testcase {
         $DB->insert_record('customcert_elements', $element);
 
         // Remove the permission for the user to view the certificate.
-        assign_capability('mod/customcert:view', CAP_PROHIBIT, $roleids['student'], \context_course::instance($course->id));
+        assign_capability('mod/customcert:view', CAP_PROHIBIT, $roleids['student'], context_course::instance($course->id));
 
         // Run the task.
         $sink = $this->redirectEmails();
@@ -512,14 +1462,12 @@ final class email_certificate_task_test extends advanced_testcase {
             'requiredtime' => '60']);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -595,14 +1543,12 @@ final class email_certificate_task_test extends advanced_testcase {
         ]);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -682,14 +1628,12 @@ final class email_certificate_task_test extends advanced_testcase {
         ]);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -744,14 +1688,12 @@ final class email_certificate_task_test extends advanced_testcase {
             'emailstudents' => 1]);
 
         // Create template object.
-        $template = new stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'A template';
-        $template->contextid = context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page to this template.
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
 
         // Add an element to the page.
         $element = new stdClass();
@@ -760,7 +1702,7 @@ final class email_certificate_task_test extends advanced_testcase {
         $DB->insert_record('customcert_elements', $element);
 
         // Ok, now issue this to one user.
-        \mod_customcert\certificate::issue_certificate($customcert->id, $user1->id);
+        $this->issue_certificate((int)$customcert->id, (int)$user1->id);
 
         // Confirm there is only one entry in this table.
         $this->assertEquals(1, $DB->count_records('customcert_issues'));
@@ -846,15 +1788,14 @@ final class email_certificate_task_test extends advanced_testcase {
             'emailstudents' => 1]);
 
         // Set up a basic certificate template.
-        $template = new \stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'Test Template';
-        $template->contextid = \context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
         // Add a page and an element to put the certificate in a valid state.
-        $pageid = $template->add_page();
-        $element = new \stdClass();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+
+        $element = new stdClass();
         $element->pageid = $pageid;
         $element->name = 'Test Element';
         $DB->insert_record('customcert_elements', $element);
@@ -871,7 +1812,7 @@ final class email_certificate_task_test extends advanced_testcase {
         set_config('certificateexecutionperiod', 1, 'customcert');
 
         // Execute the issue certificates task.
-        $task = new \mod_customcert\task\issue_certificates_task();
+        $task = new issue_certificates_task();
         $task->execute();
 
         // After executing the task, verify that a certificate issue record was created.
@@ -948,12 +1889,11 @@ final class email_certificate_task_test extends advanced_testcase {
         $customcert = $this->getDataGenerator()->create_module('customcert', ['course' => $course->id]);
 
         // Make the template valid.
-        $template = new \stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'T';
-        $template->contextid = \context_course::instance($course->id)->id;
-        $template = new \mod_customcert\template($template);
-        $pageid = $template->add_page();
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+
         $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'E']);
 
         $sink = $this->redirectEmails();
@@ -1003,13 +1943,12 @@ final class email_certificate_task_test extends advanced_testcase {
         ]);
 
         // Create valid template.
-        $template = new \stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'Manager Test Template';
-        $template->contextid = \context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+
         $DB->insert_record('customcert_elements', (object)[
             'pageid' => $pageid,
             'name' => 'ElementX',
@@ -1092,13 +2031,11 @@ final class email_certificate_task_test extends advanced_testcase {
         ]);
 
         // Create valid template (one element).
-        $template = new \stdClass();
-        $template->id = $customcert->templateid;
-        $template->name = 'ReceiveIssue Test Template';
-        $template->contextid = \context_course::instance($course->id)->id;
-        $template = new template($template);
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
 
-        $pageid = $template->add_page();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
         $DB->insert_record('customcert_elements', (object)[
             'pageid' => $pageid,
             'name' => 'ElementX',
@@ -1106,7 +2043,7 @@ final class email_certificate_task_test extends advanced_testcase {
 
         // Run issuing task.
         $sink = $this->redirectEmails();
-        $task = new \mod_customcert\task\issue_certificates_task();
+        $task = new issue_certificates_task();
         $task->execute();
         $emails = $sink->get_messages();
         $sink->close();
@@ -1133,5 +2070,656 @@ final class email_certificate_task_test extends advanced_testcase {
             $this->assertContains($email->to, $expected);
             $expected = array_diff($expected, [$email->to]);
         }
+    }
+
+    /**
+     * Tests that sending the certificate email to a student marks the completionemailed rule
+     * complete for them once emailstudents is enabled for the instance.
+     *
+     * @covers \mod_customcert\service\certificate_email_service
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_send_issue_completes_activity_for_emailed_student(): void {
+        global $CFG, $DB;
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Note: completionview is deliberately not set here. If it were the only other
+        // available rule, and completionemailed were required before a student is even
+        // considered a candidate for auto-issuance, no one could ever satisfy it -- but that
+        // candidacy gating is certificate_issuer_service's concern, not send_issue()'s, so this
+        // test calls send_issue() directly rather than going through the issuance cron.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        // Build a minimal template with one element.
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        // Not emailed yet, so the activity must not be complete.
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $data->completionstate);
+
+        // Issue and email the certificate to the student.
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+
+        $sink = $this->redirectEmails();
+        $emailservice = certificate_email_service::create();
+        $emailservice->send_issue((int)$customcert->id, $issueid);
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'emailed', ['id' => $issueid]));
+        $this->assertCount(1, $emails);
+        $this->assertEquals($student->email, $emails[0]->to);
+
+        // Now that the student has been emailed, the activity must be complete.
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_COMPLETE, $data->completionstate);
+    }
+
+    /**
+     * Tests that the completionemailed rule does not report complete for a student who was
+     * never emailed, even if the issue was processed because only teachers were emailed and the
+     * completionemailed flag is set directly on the instance record.
+     *
+     * @covers \mod_customcert\service\certificate_email_service
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_send_issue_does_not_complete_activity_when_student_is_not_emailed(): void {
+        global $CFG, $DB;
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $roleids = $DB->get_records_menu('role', null, '', 'shortname, id');
+        $student = $this->getDataGenerator()->create_user();
+        $teacher = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $roleids['editingteacher']);
+
+        // Only emailteachers is enabled, but completionemailed is set on the instance too -- this
+        // combination shouldn't be reachable via the form, but the completion rule must still not
+        // treat "the issue was processed" as "the student was emailed" if it occurs regardless.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailteachers' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        // The student triggers issuance themselves (e.g. by viewing the certificate).
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        $sink = $this->redirectEmails();
+        $emailservice = certificate_email_service::create();
+        $emailservice->send_issue((int)$customcert->id, $issueid);
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        // The issue was processed (only the teacher was emailed about it) ...
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'emailed', ['id' => $issueid]));
+        $this->assertCount(1, $emails);
+        $this->assertEquals($teacher->email, $emails[0]->to);
+
+        // ... but the student themselves never received anything, so they must not be complete.
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $data->completionstate);
+    }
+
+    /**
+     * A teacher-only issue must not retroactively satisfy completionemailed just because
+     * emailstudents is enabled for the instance afterwards -- studentemailed is a historical
+     * fact recorded at send time, not derived from the instance's current configuration.
+     *
+     * @covers \mod_customcert\service\certificate_email_service
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_completion_stays_incomplete_after_emailstudents_enabled_later(): void {
+        global $CFG, $DB;
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $roleids = $DB->get_records_menu('role', null, '', 'shortname, id');
+        $student = $this->getDataGenerator()->create_user();
+        $teacher = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $roleids['editingteacher']);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailteachers' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        $sink = $this->redirectEmails();
+        $emailservice = certificate_email_service::create();
+        $emailservice->send_issue((int)$customcert->id, $issueid);
+        $sink->close();
+
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'emailed', ['id' => $issueid]));
+        $this->assertEquals(0, (int)$DB->get_field('customcert_issues', 'studentemailed', ['id' => $issueid]));
+
+        // The admin retroactively enables emailstudents, then something (e.g. a later cron run)
+        // forces a fresh completion recompute for this student.
+        $DB->set_field('customcert', 'emailstudents', 1, ['id' => $customcert->id]);
+        $completioninfo->update_state($cm, COMPLETION_UNKNOWN, (int)$student->id);
+
+        // The historical fact must not change just because the current configuration did.
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $data->completionstate);
+    }
+
+    /**
+     * Once a student really has been emailed, completion must not regress just because
+     * emailstudents is later disabled for the instance.
+     *
+     * @covers \mod_customcert\service\certificate_email_service
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_completion_stays_complete_after_emailstudents_disabled_later(): void {
+        global $CFG, $DB;
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        $sink = $this->redirectEmails();
+        $emailservice = certificate_email_service::create();
+        $emailservice->send_issue((int)$customcert->id, $issueid);
+        $sink->close();
+
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_COMPLETE, $data->completionstate);
+
+        // The admin disables emailstudents, then something forces a fresh completion recompute.
+        $DB->set_field('customcert', 'emailstudents', 0, ['id' => $customcert->id]);
+        $completioninfo->update_state($cm, COMPLETION_UNKNOWN, (int)$student->id);
+
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_COMPLETE, $data->completionstate);
+    }
+
+    /**
+     * If email_to_user() reports failure for the student, completion must not be granted even
+     * though the issue was still processed (marked emailed).
+     *
+     * @covers \mod_customcert\service\certificate_email_service
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_send_issue_does_not_complete_when_email_to_user_fails(): void {
+        global $CFG, $DB;
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Force email_to_user() to fail deterministically for this student.
+        $DB->set_field('user', 'email', '', ['id' => $student->id]);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        $sink = $this->redirectEmails();
+        $emailservice = certificate_email_service::create();
+        $emailservice->send_issue((int)$customcert->id, $issueid);
+        $emails = $sink->get_messages();
+        $sink->close();
+        $this->assertDebuggingCalled();
+
+        $this->assertCount(0, $emails);
+        // The generic 'emailed' flag is still set (the issue was processed) ...
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'emailed', ['id' => $issueid]));
+        // ... but studentemailed must not be, since email_to_user() reported failure.
+        $this->assertEquals(0, (int)$DB->get_field('customcert_issues', 'studentemailed', ['id' => $issueid]));
+
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $data->completionstate);
+    }
+
+    /**
+     * send_issue() must not treat NULL studentemailed on an already-processed issue as
+     * retryable, even when called directly rather than through candidate selection.
+     *
+     * @covers \mod_customcert\service\certificate_email_service::send_issue
+     */
+    public function test_send_issue_does_not_reemail_processed_issue_with_null_studentemailed(): void {
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        // A processed historical issue: emailed, but studentemailed predates this field.
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+        $DB->set_field('customcert_issues', 'emailed', 1, ['id' => $issueid]);
+        $DB->set_field('customcert_issues', 'studentemailed', null, ['id' => $issueid]);
+
+        $sink = $this->redirectEmails();
+        certificate_email_service::create()->send_issue((int)$customcert->id, $issueid);
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(0, $emails);
+        $this->assertNull($DB->get_field('customcert_issues', 'studentemailed', ['id' => $issueid]));
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'emailed', ['id' => $issueid]));
+    }
+
+    /**
+     * studentemailed = 1 must block a student send even if emailed is inconsistently still 0.
+     *
+     * @covers \mod_customcert\service\certificate_email_service::send_issue
+     */
+    public function test_send_issue_does_not_resend_when_studentemailed_already_one(): void {
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+        $DB->set_field('customcert_issues', 'emailed', 0, ['id' => $issueid]);
+        $DB->set_field('customcert_issues', 'studentemailed', 1, ['id' => $issueid]);
+
+        $sink = $this->redirectEmails();
+        certificate_email_service::create()->send_issue((int)$customcert->id, $issueid);
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(0, $emails);
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'studentemailed', ['id' => $issueid]));
+    }
+
+    /**
+     * End-to-end regression test for a circular dependency between completionemailed and
+     * automatic issuance: get_email_candidates_for_customcert() used to require the certificate's
+     * own *aggregate* completion state to already be complete before considering a user a
+     * candidate for auto-issuance/emailing -- but that aggregate includes completionemailed
+     * itself, so a student who had never visited the certificate (completionview not required
+     * here, reproducing #645's reported case) could never become a candidate, could therefore
+     * never be emailed, and so completionemailed could never become complete either.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service
+     * @covers \mod_customcert\service\certificate_email_service
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_issue_certificates_task_completes_activity_for_student_who_never_visited(): void {
+        global $CFG, $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        // Note: completionview is deliberately not set here -- see the docblock above.
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        // Nothing has happened yet: no issue, and the activity is incomplete.
+        $this->assertFalse(
+            $DB->record_exists('customcert_issues', ['customcertid' => $customcert->id, 'userid' => $student->id])
+        );
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $data->completionstate);
+
+        // Run the actual issuance cron -- not send_issue() directly -- so this exercises the
+        // candidate-selection filtering that caused the circularity.
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $issue = $DB->get_record(
+            'customcert_issues',
+            ['customcertid' => $customcert->id, 'userid' => $student->id],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertEquals(1, (int)$issue->emailed);
+        $this->assertEquals(1, (int)$issue->studentemailed);
+        $this->assertCount(1, $emails);
+        $this->assertEquals($student->email, $emails[0]->to);
+
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_COMPLETE, $data->completionstate);
+    }
+
+    /**
+     * Regression test for manual completion tracking: has_met_own_completion() must still gate
+     * candidacy on the student's manually-ticked completion state. get_core_completion_state()
+     * (used to break the automatic-tracking circularity with completionemailed) only covers
+     * grade/passgrade/view criteria and returns an empty array under manual tracking, which would
+     * otherwise vacuously pass every student regardless of whether they'd ticked the activity
+     * complete.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service
+     */
+    public function test_issue_certificates_task_respects_manual_completion(): void {
+        global $CFG, $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completion' => COMPLETION_TRACKING_MANUAL,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        // Not manually completed yet: no issue, no email.
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertFalse(
+            $DB->record_exists('customcert_issues', ['customcertid' => $customcert->id, 'userid' => $student->id])
+        );
+        $this->assertCount(0, $emails);
+
+        // Now the student manually marks the activity complete.
+        $completioninfo->update_state($cm, COMPLETION_COMPLETE, $student->id);
+
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $issue = $DB->get_record(
+            'customcert_issues',
+            ['customcertid' => $customcert->id, 'userid' => $student->id],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertEquals(1, (int)$issue->emailed);
+        $this->assertCount(1, $emails);
+        $this->assertEquals($student->email, $emails[0]->to);
+    }
+
+    /**
+     * A student whose send failed must be reconsidered by a later issuance run (they must not be
+     * excluded from candidacy just because their issue was processed), the retry must satisfy
+     * completionemailed once it succeeds, and the retry must not re-email the teacher, who was
+     * already successfully notified on the first run.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service
+     * @covers \mod_customcert\service\certificate_email_service
+     * @covers \mod_customcert\service\issue_repository::list_emailed_users
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_issue_certificates_task_retries_student_after_failed_send(): void {
+        global $CFG, $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $roleids = $DB->get_records_menu('role', null, '', 'shortname, id');
+        $student = $this->getDataGenerator()->create_user();
+        $teacher = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $roleids['editingteacher']);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'emailteachers' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        // Force the student's send to fail deterministically on the first run.
+        $DB->set_field('user', 'email', '', ['id' => $student->id]);
+
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+        $this->assertDebuggingCalled();
+
+        $issue = $DB->get_record(
+            'customcert_issues',
+            ['customcertid' => $customcert->id, 'userid' => $student->id],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertEquals(1, (int)$issue->emailed);
+        $this->assertEquals(0, (int)$issue->studentemailed);
+        $this->assertCount(1, $emails);
+        $this->assertEquals($teacher->email, $emails[0]->to);
+
+        // Failed send: completionemailed must not be satisfied.
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $data->completionstate);
+
+        // Fix the student's email address, then let the cron run again.
+        $DB->set_field('user', 'email', 'student-fixed@example.com', ['id' => $student->id]);
+
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        // Only the student is emailed this time -- the teacher was already successfully notified
+        // on the first run and must not be emailed again.
+        $this->assertCount(1, $emails);
+        $this->assertEquals('student-fixed@example.com', $emails[0]->to);
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'studentemailed', ['id' => $issue->id]));
+
+        // Still only one issue for this student -- the retry must not have manufactured a duplicate.
+        $this->assertEquals(
+            1,
+            $DB->count_records('customcert_issues', ['customcertid' => $customcert->id, 'userid' => $student->id])
+        );
+
+        // Successful retry: completionemailed must now be satisfied.
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_COMPLETE, $data->completionstate);
+    }
+
+    /**
+     * A historical issue with emailed = 1 and studentemailed = NULL must not be automatically
+     * re-emailed by the issuance cron.
+     *
+     * @covers \mod_customcert\service\certificate_issuer_service
+     * @covers \mod_customcert\service\issue_repository::list_emailed_users
+     * @covers \mod_customcert\completion\custom_completion
+     */
+    public function test_issue_certificates_task_does_not_reemail_historical_null_studentemailed(): void {
+        global $CFG, $DB;
+
+        set_config('useadhoc', 0, 'customcert');
+
+        $CFG->enablecompletion = true;
+        $course = $this->getDataGenerator()->create_course(['enablecompletion' => 1]);
+
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id);
+
+        $customcert = $this->getDataGenerator()->create_module('customcert', [
+            'course' => $course->id,
+            'emailstudents' => 1,
+            'completionemailed' => 1,
+            'completion' => COMPLETION_TRACKING_AUTOMATIC,
+        ]);
+
+        $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
+        $templateservice = template_service::create();
+        $pageid = $templateservice->add_page($template);
+        $this->assertDebuggingNotCalled();
+        $DB->insert_record('customcert_elements', (object)['pageid' => $pageid, 'name' => 'ElementX']);
+
+        $issueid = $this->issue_certificate((int)$customcert->id, (int)$student->id);
+        $DB->set_field('customcert_issues', 'emailed', 1, ['id' => $issueid]);
+        $DB->set_field('customcert_issues', 'studentemailed', null, ['id' => $issueid]);
+
+        $cm = $DB->get_record('course_modules', ['id' => $customcert->cmid]);
+        $completioninfo = new completion_info($course);
+
+        $sink = $this->redirectEmails();
+        $task = new issue_certificates_task();
+        $task->execute();
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(0, $emails);
+        $this->assertNull($DB->get_field('customcert_issues', 'studentemailed', ['id' => $issueid]));
+        $this->assertEquals(1, (int)$DB->get_field('customcert_issues', 'emailed', ['id' => $issueid]));
+
+        $data = $completioninfo->get_data($cm, false, $student->id);
+        $this->assertEquals(COMPLETION_INCOMPLETE, $data->completionstate);
+    }
+
+    /**
+     * Issue a certificate via the service for test setup.
+     *
+     * @param int $customcertid
+     * @param int $userid
+     * @return int
+     */
+    private function issue_certificate(int $customcertid, int $userid): int {
+        $service = certificate_issue_service::create();
+
+        return $service->issue_certificate($customcertid, $userid);
     }
 }

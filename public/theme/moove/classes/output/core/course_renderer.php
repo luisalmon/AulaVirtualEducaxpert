@@ -18,31 +18,31 @@
  * Course renderer.
  *
  * @package    theme_moove
- * @copyright  2022 Willian Mano {@link https://conecti.me}
+ * @copyright  2025 Willian Mano - willianmanoaraujo@gmail.com
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 namespace theme_moove\output\core;
 
+use stdClass;
+use moodle_url;
 use html_writer;
 use coursecat_helper;
-use stdClass;
 use core_course_list_element;
 use theme_moove\util\course;
-use moodle_url;
+use core\lang_string;
 
 /**
- * Renderers to align Moove's course elements to what is expect
+ * The core course renderer
  *
- * @package    theme_moove
- * @copyright  2022 Willian Mano {@link https://conecti.me}
- * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * Can be retrieved with the following:
+ * $renderer = $PAGE->get_renderer('core','course');
  */
 class course_renderer extends \core_course_renderer {
     /**
      * Renders the list of courses
      *
-     * This is internal function, please use core_course_renderer::courses_list() or another public
+     * This is internal function, please use core_course_renderer::courses_list or another public
      * method from outside of the class
      *
      * If list of courses is specified in $courses; the argument $chelper is only used
@@ -83,15 +83,25 @@ class course_renderer extends \core_course_renderer {
                 // The option paginationurl was specified, display pagingbar.
                 $perpage = $chelper->get_courses_display_option('limit', $CFG->coursesperpage);
                 $page = $chelper->get_courses_display_option('offset') / $perpage;
-                $pagingbar = $this->paging_bar($totalcount, $page, $perpage,
-                    $paginationurl->out(false, ['perpage' => $perpage]));
+                $pagingbar = $this->paging_bar(
+                    $totalcount,
+                    $page,
+                    $perpage,
+                    $paginationurl->out(false, ['perpage' => $perpage])
+                );
                 if ($paginationallowall) {
-                    $pagingbar .= html_writer::tag('div', html_writer::link($paginationurl->out(false, ['perpage' => 'all']),
-                        get_string('showall', '', $totalcount)), ['class' => 'paging paging-showall']);
+                    $pagingbar .= html_writer::tag(
+                        'div',
+                        html_writer::link(
+                            $paginationurl->out(false, ['perpage' => 'all']),
+                            get_string('showall', '', $totalcount)
+                        ),
+                        ['class' => 'paging paging-showall']
+                    );
                 }
             } else if ($viewmoreurl = $chelper->get_courses_display_option('viewmoreurl')) {
                 // The option for 'View more' link was specified, display more link.
-                $viewmoretext = $chelper->get_courses_display_option('viewmoretext', new \lang_string('viewmore'));
+                $viewmoretext = $chelper->get_courses_display_option('viewmoretext', new lang_string('viewmore'));
                 $morelink = html_writer::tag(
                     'div',
                     html_writer::link($viewmoreurl, $viewmoretext, ['class' => 'btn btn-secondary']),
@@ -100,44 +110,38 @@ class course_renderer extends \core_course_renderer {
             }
         } else if (($totalcount > $CFG->coursesperpage) && $paginationurl && $paginationallowall) {
             // There are more than one page of results and we are in 'view all' mode, suggest to go back to paginated view mode.
-            $pagingbar = html_writer::tag('div',
-                html_writer::link($paginationurl->out(false, ['perpage' => $CFG->coursesperpage]),
-                get_string('showperpage', '', $CFG->coursesperpage)), ['class' => 'paging paging-showperpage']);
+            $pagingbar = html_writer::tag(
+                'div',
+                html_writer::link(
+                    $paginationurl->out(false, ['perpage' => $CFG->coursesperpage]),
+                    get_string('showperpage', '', $CFG->coursesperpage)
+                ),
+                ['class' => 'paging paging-showperpage']
+            );
         }
 
         // Display list of courses.
         $attributes = $chelper->get_and_erase_attributes('courses');
+        $attributes['class'] .= ' card-grid mx-0 row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-4';
+
         $content = html_writer::start_tag('div', $attributes);
 
         if (!empty($pagingbar)) {
             $content .= $pagingbar;
         }
 
-        $coursecount = 1;
-        $content .= html_writer::start_tag('div', ['class' => 'card-deck dashboard-card-deck mt-2']);
         foreach ($courses as $course) {
             $content .= $this->coursecat_coursebox($chelper, $course);
-
-            if ($coursecount % 3 == 0) {
-                $content .= html_writer::end_tag('div');
-                $content .= html_writer::start_tag('div', ['class' => 'card-deck dashboard-card-deck mt-2']);
-            }
-
-            $coursecount ++;
         }
-
-        $content .= html_writer::end_tag('div');
 
         if (!empty($pagingbar)) {
             $content .= $pagingbar;
         }
-
         if (!empty($morelink)) {
             $content .= $morelink;
         }
 
-        $content .= html_writer::end_tag('div'); // End courses.
-
+        $content .= html_writer::end_tag('div'); // Closes courses div.
         return $content;
     }
 
@@ -145,17 +149,13 @@ class course_renderer extends \core_course_renderer {
      * Displays one course in the list of courses.
      *
      * This is an internal function, to display an information about just one course
-     * please use core_course_renderer::course_info_box()
+     * please use core_course_renderer::course_info_box
      *
      * @param coursecat_helper $chelper various display options
      * @param core_course_list_element|stdClass $course
      * @param string $additionalclasses additional classes to add to the main <div> tag (usually
      *    depend on the course position in list - first/last/even/odd)
      * @return string
-     *
-     * @throws \coding_exception
-     * @throws \dml_exception
-     * @throws \moodle_exception
      */
     protected function coursecat_coursebox(coursecat_helper $chelper, $course, $additionalclasses = '') {
         if (!isset($this->strings->summary)) {
@@ -180,12 +180,7 @@ class course_renderer extends \core_course_renderer {
      *
      * @param coursecat_helper $chelper various display options
      * @param stdClass|core_course_list_element $course
-     *
      * @return string
-     *
-     * @throws \coding_exception
-     * @throws \dml_exception
-     * @throws \moodle_exception
      */
     protected function coursecat_coursebox_content(coursecat_helper $chelper, $course) {
         if ($course instanceof stdClass) {
@@ -219,7 +214,23 @@ class course_renderer extends \core_course_renderer {
             'courseurl' => $this->get_course_url($course->id),
         ];
 
-        return $this->render_from_template('theme_moove/moove_coursecard', $data);
+        return $this->render_from_template('theme_moove/moove/coursecard', $data);
+    }
+
+    /**
+     * Returns the course URL based on some criterias.
+     *
+     * @param int $courseid
+     *
+     * @return moodle_url
+     * @throws \moodle_exception
+     */
+    private function get_course_url($courseid) {
+        if (class_exists('\local_course\output\index')) {
+            return new moodle_url('/local/course/index.php', ['id' => $courseid]);
+        }
+
+        return new moodle_url('/course/view.php', ['id' => $courseid]);
     }
 
     /**
@@ -237,21 +248,5 @@ class course_renderer extends \core_course_renderer {
         }
 
         return $data;
-    }
-
-    /**
-     * Returns the course URL based on some criterias.
-     *
-     * @param int $courseid
-     *
-     * @return moodle_url
-     * @throws \moodle_exception
-     */
-    private function get_course_url($courseid) {
-        if (class_exists('\local_course\output\index')) {
-            return new moodle_url('/local/course/index.php', ['id' => $courseid]);
-        }
-
-        return new moodle_url('/course/view.php', ['id' => $courseid]);
     }
 }

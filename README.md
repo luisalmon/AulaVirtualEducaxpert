@@ -195,16 +195,56 @@ php -S localhost:8080 -t public                      # revisar en el navegador
 ### 3 · Actualizar los plugins de terceros a la nueva versión
 
 `php admin/cli/upgrade.php` **no bloquea** por plugins viejos: quedan instalados
-pero pueden fallar en runtime (APIs retiradas, Atto→TinyMCE, etc.). Para cada uno,
-bajar su release compatible de <https://moodle.org/plugins> y reemplazar la
-carpeta bajo `public/`:
+pero pueden fallar en runtime (APIs retiradas, Atto→TinyMCE, etc.). El
+`marketplace.moodle.com` (antes moodle.org/plugins) exige cuenta para
+descargar el zip; es más simple bajar el código directo de GitHub. Fuentes
+usadas en la migración a 5.2 (repetir el proceso para la siguiente versión):
 
-`theme_moove`, `mod_customcert` (+ elementos; ojo `subplugins.json`, MDL-83705),
-`mod_hvp`, `auth_userkey`, `format_remuiformat`, `qformat_h5p`. Verificar
-`theme_trema`. Probar a fondo el in-house `block_senceluisalmon`.
+| Plugin | Repo | Rama/tag usado |
+|---|---|---|
+| `theme_moove` | `willianmano/moodle-theme_moove` | `main` |
+| `theme_trema` | `trema-tech/moodle-theme_trema` | `main` |
+| `mod_customcert` (+ elementos) | `mdjnelson/moodle-mod_customcert` | `MOODLE_502_STABLE` |
+| `customcertelement_daterange` | `mdjnelson/moodle-customcertelement_daterange` | `main` — repo aparte, no viene con `mod_customcert` |
+| `mod_hvp` | `h5p/moodle-mod_hvp` | `stable` |
+| `format_remuiformat` | `wisdmlabs/moodle-format_remuiformat` | tag `vX.Y.Z` |
+| `qformat_h5p` | `dthies/moodle-qformat_h5p` | `master` |
+| `auth_userkey` | `catalyst/moodle-auth_userkey` | `MOODLE_405_STABLE` ⚠️ ver nota |
 
-Repetir el paso 2 hasta que el sitio funcione sin errores (login, panel, un
-curso, generar un diploma, el bloque SENCE, ajustes del tema).
+```bash
+curl -fsSL -o p.tar.gz "https://codeload.github.com/<owner>/<repo>/tar.gz/refs/heads/<rama>"
+mkdir p && tar xzf p.tar.gz -C p --strip-components=1
+rm -rf public/<ruta-del-plugin> && cp -a p public/<ruta-del-plugin>
+```
+
+**`mod_hvp` trae 3 submódulos git** (`library`, `editor`, `reporting`) que un
+tarball de GitHub **no incluye** — sin ellos falla con
+`Failed to open stream: .../mod/hvp/library/h5p.classes.php`. Bajarlos aparte
+y colocarlos dentro de `mod/hvp/`:
+
+```bash
+for m in library:h5p-php-library:moodle editor:h5p-editor-php-library:stable reporting:h5p-php-report:stable; do
+  IFS=: read -r dir repo rama <<< "$m"
+  curl -fsSL -o x.tar.gz "https://codeload.github.com/h5p/$repo/tar.gz/refs/heads/$rama"
+  rm -rf "public/mod/hvp/$dir" && mkdir -p t && tar xzf x.tar.gz -C t --strip-components=1
+  mv t "public/mod/hvp/$dir"; rm -f x.tar.gz
+done
+```
+
+**⚠️ `auth_userkey`**: su última release oficial solo declara soporte hasta
+Moodle 5.0 (`$plugin->supported = [405, 500]` en la rama por defecto). No hay
+ninguna rama/tag que declare 5.1/5.2. Se usó igual la rama `MOODLE_405_STABLE`
+(la más reciente mantenida, de 2025) porque `requires` es muy permisivo y en
+la práctica sigue funcionando — probarlo a fondo (login vía key) en cada
+actualización futura.
+
+Después de reemplazar el código: `php admin/cli/upgrade.php --non-interactive`
+otra vez (migra las tablas de los plugins actualizados) y
+`php admin/cli/purge_caches.php`. Repetir el paso 2 hasta que el sitio
+funcione sin errores: login, panel, un curso con el tema, **generar un
+diploma de verdad** (customcert cambió bastante entre versiones — vale la
+pena generarlo por CLI con `\mod_customcert\template::generate_pdf()` para
+descartar la interfaz web de la ecuación), el bloque SENCE.
 
 ### 4 · Commit, merge y despliegue
 

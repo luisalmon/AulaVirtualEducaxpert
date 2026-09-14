@@ -102,7 +102,7 @@ class dash_enrolments implements box_interface {
             $today = time();
             $activecourses = $this->get_active_courses();
             if ($activecourses) {
-                list($in, $params) = $DB->get_in_or_equal($activecourses, SQL_PARAMS_NAMED);
+                [$in, $params] = $DB->get_in_or_equal($activecourses, SQL_PARAMS_NAMED);
                 $params['today'] = $today;
 
                 $sql = "SELECT COUNT(1) FROM {user_enrolments} ue
@@ -129,7 +129,7 @@ class dash_enrolments implements box_interface {
         $usersenrolments = $cache->get('usersenrolments');
         if (!$usersenrolments) {
             $usersenrolments = $DB->count_records('user_enrolments');
-            $cache->set('$usersenrolments', $usersenrolments);
+            $cache->set('usersenrolments', $usersenrolments);
         }
         return $usersenrolments;
     }

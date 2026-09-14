@@ -1,5 +1,8 @@
+#sticky-footer {
+    background-color: #fff !important;
+}
+
 #page-footer {
-    margin: 0 -15px;
     background-color: #282829;
     color: #fff;
 
@@ -49,6 +52,7 @@
                     color: #fff;
                     width: 38px;
                     height: 38px;
+                    padding: 0.6rem 0.75rem;
 
                     &.btn-rounded {
                         border-radius: 50%;
@@ -122,6 +126,30 @@
 
                         &:hover {
                             background-color: darken($telegram-color, 20%);
+                        }
+
+                        .fa {
+                            margin-left: -1px;
+                        }
+                    }
+
+                    &.tiktok {
+                        background-color: $tiktok-color;
+
+                        &:hover {
+                            background-color: darken($tiktok-color, 20%);
+                        }
+
+                        .fa {
+                            margin-left: -1px;
+                        }
+                    }
+
+                    &.pinterest {
+                        background-color: $pinterest-color;
+
+                        &:hover {
+                            background-color: darken($pinterest-color, 20%);
                         }
 
                         .fa {

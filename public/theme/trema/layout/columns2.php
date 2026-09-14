@@ -18,8 +18,8 @@
  * A two column layout for the Trema theme.
  *
  * @package     theme_trema
- * @copyright   2022-2025 Trema - {@link https://trema.tech/}
- * @copyright   2024-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2022-2026 Trema - {@link https://trema.tech/}
+ * @copyright   2024-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -53,11 +53,7 @@ if ($PAGE->has_secondary_navigation()) {
     }
 }
 
-if ($CFG->branch > 400) {
-    $primary = new theme_trema\output\primary_navigation($PAGE);
-} else {
-    $primary = new core\navigation\output\primary($PAGE);
-}
+$primary = new theme_trema\output\primary_navigation($PAGE);
 
 $renderer = $PAGE->get_renderer('core');
 $primarymenu = $primary->export_for_template($renderer);
@@ -87,8 +83,8 @@ $templatecontext = [
     'headercontent' => $headercontent,
     'overflow' => $overflow,
     'addblockbutton' => $addblockbutton,
-    'defaultfooter' => \format_text($pluginsettings->defaultfooter, FORMAT_HTML, ['context' => $context, 'noclean' => true]),
-    'showbranding' => $pluginsettings->showbranding,
+    'defaultfooter' => \format_text($pluginsettings->defaultfooter ?? '', FORMAT_HTML, ['context' => $context, 'noclean' => true]),
+    'showbranding' => $pluginsettings->showbranding ?? false,
 ];
 
 echo $OUTPUT->render_from_template('theme_trema/columns2', $templatecontext);

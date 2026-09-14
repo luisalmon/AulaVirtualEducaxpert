@@ -22,9 +22,15 @@
     Context variables:
     * activecourses - Active courses
     * totalcourses - Total number of courses
+
+    Example context (json):
+    {
+        "activecourses": 42,
+        "totalcourses": 100
+    }
 }}
 <div class="card-body">
-    <i class="fa fa-3x fa-graduation-cap float-left pr-3"></i>
-    <h3 class="h5 pt-1">{{#str}}courses{{/str}}</h3>
-    <p>{{#str}}active{{/str}} {{activecourses}} | {{#str}}total{{/str}} {{totalcourses}}</p>
+    <i class="fa fa-3x fa-graduation-cap float-start float-left pe-3"></i>
+    <h3 class="h5">{{#str}}courses{{/str}}</h3>
+    <div>{{#str}}active{{/str}} {{activecourses}} | {{#str}}total{{/str}} {{totalcourses}}</div>
 </div>

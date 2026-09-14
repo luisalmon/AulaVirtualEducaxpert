@@ -18,8 +18,8 @@
  * General settings
  *
  * @package     theme_trema
- * @copyright   2019-2025 Trema - {@link https://trema.tech/}
- * @copyright   2023-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2019-2026 Trema - {@link https://trema.tech/}
+ * @copyright   2023-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -57,24 +57,34 @@ $setting = new admin_setting_configselect($name, $title, $description, $default,
 $setting->set_updatedcallback('theme_reset_all_caches');
 $page->add($setting);
 
-if ($CFG->branch > 400) {
-    // Process primary navigation (custom menu) through Moodle filters.
-    $name = 'theme_trema/navfilter';
-    $title = get_string('navfilter', $themename);
-    $description = get_string('navfilter_desc', $themename);
-    $default = true;
-    $setting = new admin_setting_configcheckbox($name, $title, $description, $default, true, false);
-    $setting->set_updatedcallback('theme_reset_all_caches');
-    $page->add($setting);
-}
+// Process primary navigation (custom menu) through Moodle filters.
+$name = 'theme_trema/navfilter';
+$title = get_string('navfilter', $themename);
+$description = get_string('navfilter_desc', $themename);
+$default = true;
+$setting = new admin_setting_configcheckbox($name, $title, $description, $default, true, false);
+$setting->set_updatedcallback('theme_reset_all_caches');
+$page->add($setting);
 
 // Hide selected items in the primary navigation (custom menu).
 $hideitemsoptions = [];
-$hideitemsoptions['home'] = get_string('home');
-if (!empty($CFG->enabledashboard)) {
-    $hideitemsoptions['myhome'] = get_string('myhome');
+if ($CFG->branch >= 502) {
+    if (!empty($CFG->enablemyhome)) {
+        $hideitemsoptions['home'] = get_string('home');
+    }
+    if (!empty($CFG->enabledashboard)) {
+        $hideitemsoptions['myhome'] = get_string('myhome');
+    }
+    if (!empty($CFG->enablemycourses)) {
+        $hideitemsoptions['courses'] = get_string('mycourses');
+    }
+} else {
+    $hideitemsoptions['home'] = get_string('home');
+    if (!empty($CFG->enabledashboard)) {
+        $hideitemsoptions['myhome'] = get_string('myhome');
+    }
+    $hideitemsoptions['courses'] = get_string('mycourses');
 }
-$hideitemsoptions['courses'] = get_string('mycourses');
 $hideitemsoptions['siteadminnode'] = get_string('administrationsite');
 $name = 'theme_trema/hideprimarynavigationitems';
 $title = get_string('hideprimarynavigationitems', $themename, null, true);

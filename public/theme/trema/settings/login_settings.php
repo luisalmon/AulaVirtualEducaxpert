@@ -18,8 +18,8 @@
  * Login settings
  *
  * @package     theme_trema
- * @copyright   2019-2025 Trema - {@link https://trema.tech/}
- * @copyright   2024-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2019-2026 Trema - {@link https://trema.tech/}
+ * @copyright   2024-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -56,9 +56,11 @@ if (get_config($themename, 'loginpagestyle') == "image") {
 
 // Login box text alignment.
 $choices = [
-    'left'   => get_string('left', 'editor'),
-    'center' => get_string('middle', 'editor'),
-    'right'  => get_string('right', 'editor'),
+    'left'      => get_string('left', 'editor'),
+    'halfleft'  => get_string('halfleft', $themename),
+    'center'    => get_string('middle', 'editor'),
+    'halfright' => get_string('halfright', $themename),
+    'right'     => get_string('right', 'editor'),
 ];
 $name = 'theme_trema/loginboxcontentalign';
 $title = get_string('loginboxcontentalign', $themename);
