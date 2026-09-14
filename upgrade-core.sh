@@ -3,12 +3,13 @@
 # upgrade-core.sh — Actualiza el NÚCLEO de Moodle (estructura "public/" de 5.x)
 # conservando los plugins propios de EducaXpert y la configuración.
 # Antes de tocar nada, respalda en backup/<fecha_hora>/ todo lo que ya exista:
-# la BD (mysqldump comprimido), moodledata (zip/tar.gz) y el código actual del
-# repo (zip/tar.gz, antes de que el paso 4 lo borre). En una instalación nueva
-# omite cada pieza que no exista. SKIP_DATA_BACKUP=1 salta moodledata/código
-# (deja solo la BD, para iterar rápido en local). La MIGRACIÓN de la BD (el
-# upgrade en sí) la sigue haciendo 'php admin/cli/upgrade.php' después, no
-# este script.
+# la BD (mysqldump comprimido) y moodledata (zip/tar.gz). El código no hace
+# falta respaldarlo aparte: el árbol siempre está limpio y commiteado antes
+# de correr esto (lo exige el paso 0), así que 'git log' / 'git checkout
+# <commit>' ya recuperan ese mismo estado. En una instalación nueva se omite
+# cada pieza que no exista. SKIP_DATA_BACKUP=1 salta moodledata (deja solo
+# la BD, para iterar rápido en local). La MIGRACIÓN de la BD (el upgrade en
+# sí) la sigue haciendo 'php admin/cli/upgrade.php' después, no este script.
 #
 # La primera vez migra el repo de la estructura plana 4.5 a la split 5.x:
 #   <repo>/            -> admin/cli, lib (shim), scripts, config-dist.php ...
@@ -140,7 +141,7 @@ fi
 
 # 1b) moodledata ------------------------------------------------------------
 if [ -n "${SKIP_DATA_BACKUP:-}" ]; then
-  echo "==> SKIP_DATA_BACKUP=1: se omite el respaldo de moodledata y del código"
+  echo "==> SKIP_DATA_BACKUP=1: se omite el respaldo de moodledata"
 else
   DATAROOT="$(env_get MOODLE_DATAROOT)"
   if [ -n "$DATAROOT" ] && [ -d "$DATAROOT" ] && [ -n "$(ls -A "$DATAROOT" 2>/dev/null)" ]; then
@@ -155,19 +156,6 @@ else
     fi
   else
     echo "==> MOODLE_DATAROOT no definido/inexistente/vacío: se omite el respaldo de moodledata"
-  fi
-
-  # 1c) código actual del repo, ANTES de que el paso 4 lo borre --------------
-  if [ -n "$(find "$REPO" -mindepth 1 -maxdepth 1 ! -name .git ! -name backup 2>/dev/null)" ]; then
-    mkdir -p "$BACKDIR"
-    echo "==> Comprimiendo el código actual del repo"
-    ARCHIVE="$(archive_dir "$REPO" "$BACKDIR/codigo-actual" '.git/*' 'backup/*' 'vendor/*' 'node_modules/*')"; rc=$?
-    if [ "$rc" -eq 0 ] && [ -n "$ARCHIVE" ] && [ -f "$ARCHIVE" ]; then
-      echo "    $(du -h "$ARCHIVE" | cut -f1)  $ARCHIVE"
-      DID_BACKUP=1
-    else
-      echo "!! No se pudo comprimir el código actual; continúo sin ese respaldo" >&2
-    fi
   fi
 fi
 
