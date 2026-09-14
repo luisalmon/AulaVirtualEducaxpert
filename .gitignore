@@ -2,8 +2,11 @@
 #  Aula Virtual EducaXpert — .gitignore
 # ------------------------------------------------------------------
 
-# ---- Dependencias (se instalan con composer / npm) ----
-/vendor/
+# ---- Dependencias ----
+# vendor/ SÍ se versiona: en Moodle 5.x son dependencias de RUNTIME (router,
+# htmlpurifier, phpmailer, JWT...), no solo herramientas de desarrollo como
+# en 4.5. composer.phar también se versiona para poder regenerar vendor/ sin
+# depender de tener composer instalado en el servidor.
 /node_modules/
 
 # ---- Variables de entorno / secretos ----
