@@ -36,7 +36,7 @@ var messageHandlers = {
         id: job.id,
         params: result
       });
-    });
+    }, job.fixSubcontent);
   },
   libraryLoaded: function (data) {
     var library = data.library;

@@ -18,8 +18,8 @@
  * Frontpage file.
  *
  * @package     theme_trema
- * @copyright   2019-2025 Trema - {@link https://trema.tech/}
- * @copyright   2024-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2019-2026 Trema - {@link https://trema.tech/}
+ * @copyright   2024-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -70,11 +70,7 @@ if ($PAGE->has_secondary_navigation()) {
     }
 }
 
-if ($CFG->branch > 400) {
-    $primary = new theme_trema\output\primary_navigation($PAGE);
-} else {
-    $primary = new core\navigation\output\primary($PAGE);
-}
+$primary = new theme_trema\output\primary_navigation($PAGE);
 
 $renderer = $PAGE->get_renderer('core');
 $primarymenu = $primary->export_for_template($renderer);
@@ -88,6 +84,7 @@ $headercontent = $header->export_for_template($renderer);
 $adminblockshtml = $OUTPUT->blocks('side-admin');
 $numberofimages = $pluginsettings->numberofimages;
 $overlayimage   = $OUTPUT->image_url('frontpage/overlay', 'theme');
+$context = \context_system::instance();
 // Frontpage images.
 if ($numberofimages > 1) {
     $frontpagecarrousel = [];
@@ -99,17 +96,16 @@ if ($numberofimages > 1) {
         $btnhref = "carrouselbtnhref{$i}";
         $btnclass = "carrouselbtnclass{$i}";
         $url = theme_trema_setting_file_url("frontpageimage{$i}", "frontpageimage{$i}", $PAGE->theme);
-
-        if (!empty($url)) {
-            $frontpagecarrousel[$i]['image'] = !empty($pluginsettings->frontpageenabledarkoverlay) ?
-            "background-image: url('$overlayimage'), url('$url');" :
-            "background-image: url('$url')";
-        } else {
-            $frontpagecarrousel[$i]['image'] = $OUTPUT->image_url('frontpage/banner2', 'theme');
+        if (empty($url)) {
+            $url = $OUTPUT->image_url('frontpage/banner' . $i, 'theme');
         }
+        $frontpagecarrousel[$i]['image'] = !empty($pluginsettings->frontpageenabledarkoverlay)
+            ? "background-image: url('$overlayimage'), url('$url');"
+            : "background-image: url('$url');";
         $frontpagecarrousel[$i]['index']    = $i - 1;
         $frontpagecarrousel[$i]['title']    = !empty($pluginsettings->$title) ? \format_string($pluginsettings->$title) : '';
-        $frontpagecarrousel[$i]['subtitle'] = !empty($pluginsettings->$subtitle) ? \format_string($pluginsettings->$subtitle) : '';
+        $frontpagecarrousel[$i]['subtitle'] = !empty($pluginsettings->$subtitle)
+            ? \format_text($pluginsettings->$subtitle, FORMAT_HTML, ['context' => $context]) : '';
         $frontpagecarrousel[$i]['btntext']  = !empty($pluginsettings->$btntext) ? \format_string($pluginsettings->$btntext) : '';
         $frontpagecarrousel[$i]['btnhref']  = !empty($pluginsettings->$btnhref) ? $pluginsettings->$btnhref : '';
         $frontpagecarrousel[$i]['btnclass'] = !empty($pluginsettings->$btnclass) ? $pluginsettings->$btnclass : '';
@@ -125,7 +121,6 @@ if ($numberofimages > 1) {
 }
 
 $regionmainsettingsmenu = $OUTPUT->region_main_settings_menu();
-$context = \context_system::instance();
 $databs = $CFG->branch >= 500 ? 'bs-' : '';
 
 $templatecontext = [
@@ -135,7 +130,6 @@ $templatecontext = [
     'sideadminblocks' => $adminblockshtml,
     'hasblocks' => $hasblocks,
     'hasadminblocks' => is_siteadmin(),
-    'blockdraweropen' => $blockdraweropen,
     'forceblockdraweropen' => $forceblockdraweropen,
     'bodyattributes' => $bodyattributes,
     'primarymoremenu' => $primarymenu['moremenu'],
@@ -158,7 +152,7 @@ $templatecontext = [
     'frontpagetitle' => !empty($pluginsettings->frontpagetitle) ?
         \format_string($pluginsettings->frontpagetitle) : '',
     'frontpagesubtitle' => !empty($pluginsettings->frontpagesubtitle) ?
-        \format_string($pluginsettings->frontpagesubtitle) : '',
+        \format_text($pluginsettings->frontpagesubtitle, FORMAT_HTML, ['context' => $context]) : '',
     'frontpagebuttontext' => !empty($pluginsettings->frontpagebuttontext) ?
         \format_string($pluginsettings->frontpagebuttontext) : '',
     'frontpagebuttonclass' => !empty($pluginsettings->frontpagebuttonclass) ?
@@ -171,10 +165,15 @@ $templatecontext = [
     'cardssubtitle' => !empty($pluginsettings->frontpagecardssubtitle) ?
         \format_string($pluginsettings->frontpagecardssubtitle) : '',
     'cardssettings' => theme_trema_get_cards_settings(),
-    'enabletremafooter' => $pluginsettings->enabletremafooter,
+    'enabletremafooter' => $pluginsettings->enabletremafooter ?? false,
     'footerinfo' => !empty($pluginsettings->enablefooterinfo),
     'showbranding' => !empty($pluginsettings->showbranding),
     'databs' => $databs,
 ];
+
+// Just enter in this if the debug mode is not enabled.
+if ($blockdraweropen && debugging() == false) {
+    $templatecontext['blockdraweropen'] = $blockdraweropen;
+}
 
 echo $OUTPUT->render_from_template('theme_trema/frontpage', $templatecontext);

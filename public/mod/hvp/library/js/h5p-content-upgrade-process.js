@@ -7,7 +7,7 @@ H5P.ContentUpgradeProcess = (function (Version) {
    * @class
    * @namespace H5P
    */
-  function ContentUpgradeProcess(name, oldVersion, newVersion, params, id, loadLibrary, done) {
+  function ContentUpgradeProcess(name, oldVersion, newVersion, params, id, loadLibrary, done, fixSubcontent) {
     var self = this;
 
     // Make params possible to work with
@@ -32,7 +32,7 @@ H5P.ContentUpgradeProcess = (function (Version) {
       }
 
       done(null, JSON.stringify({params: upgradedParams, metadata: upgradedMetadata}));
-    });
+    }, fixSubcontent);
   }
 
   /**
@@ -46,7 +46,7 @@ H5P.ContentUpgradeProcess = (function (Version) {
    * @param {Object} metadata
    * @param {Function} done
    */
-  ContentUpgradeProcess.prototype.upgrade = function (name, oldVersion, newVersion, params, metadata, done) {
+  ContentUpgradeProcess.prototype.upgrade = function (name, oldVersion, newVersion, params, metadata, done, skipUpgrades) {
     var self = this;
 
     // Load library details and upgrade routines
@@ -78,7 +78,7 @@ H5P.ContentUpgradeProcess = (function (Version) {
         }, function (err) {
           done(err, params, metadata);
         });
-      });
+      }, skipUpgrades);
     });
   };
 
@@ -92,9 +92,9 @@ H5P.ContentUpgradeProcess = (function (Version) {
    * @param {Object} params
    * @param {Function} next
    */
-  ContentUpgradeProcess.prototype.processParams = function (library, oldVersion, newVersion, params, metadata, next) {
+  ContentUpgradeProcess.prototype.processParams = function (library, oldVersion, newVersion, params, metadata, next, skipUpgrades) {
     if (H5PUpgrades[library.name] === undefined) {
-      if (library.upgradesScript) {
+      if (library.upgradesScript && skipUpgrades !== true) {
         // Upgrades script should be loaded so the upgrades should be here.
         return next({
           type: 'scriptMissing',

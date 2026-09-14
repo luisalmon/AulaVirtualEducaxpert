@@ -3,8 +3,8 @@
 Trema Theme for Moodle LMS
 ==========================
 
-![PHP](https://img.shields.io/badge/PHP-v7.4%20to%20v8.3-blue.svg)
-![Moodle](https://img.shields.io/badge/Moodle-v4.0%20to%20v5.1-orange.svg)
+![PHP](https://img.shields.io/badge/PHP-v8.0%20to%20v8.4-blue.svg)
+![Moodle](https://img.shields.io/badge/Moodle-v4.1%20to%20v5.2-orange.svg)
 [![GitHub Issues](https://img.shields.io/github/issues/trema-tech/moodle-theme_trema.svg)](https://github.com/trema-tech/moodle-theme_trema/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-green.svg)](#contributing)
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](#license)
@@ -25,6 +25,8 @@ Trema Theme for Moodle LMS
 - [FAQ](#faq)
   - [Answers to Frequently Asked Questions](#answers-to-frequently-asked-questions)
     - [What can I override in Trema's Raw Initial SCSS settings?](#what-can-i-override-in-tremas-raw-initial-scss-settings)
+    - [What is the recommended image size for course cards?](#what-is-the-recommended-image-size-for-course-cards)
+    - [What is the recommended image size for the frontpage banner?](#what-is-the-recommended-image-size-for-the-frontpage-banner)
     - [Are there any security considerations?](#are-there-any-security-considerations)
     - [How can I get answers to other questions?](#how-can-i-get-answers-to-other-questions)
   - [Contributors](#contributors)
@@ -77,6 +79,7 @@ All features from Boost (native Moodle theme) plus these Trema features:
   - Optional background image for the login page.
   - Option to display the 'Create account' section first.
   - Hide login form (useful for OAuth2 authentication).
+  - Login box alignment: left, center, right, half-left, or half-right. The half-left and half-right options additionally constrain the login form to half of the viewport at 1120 pixels and above. When authentication instructions have been configured (Site administration > Plugins > Authentication > Manage authentication > Instructions), the left, right, half-left, and half-right alignments display the instructions as a styled overlay on the side opposite the login form at viewport widths of 1120 pixels or more. Below 1120 pixels (or when no instructions are configured, or when the center alignment is used), the instructions appear below the Log in button. Note: the left, right, half-left, and half-right options use physical positioning and do not currently mirror in right-to-left languages.
 - Enforce required profile fields on user creation by admins and users that have the capability to create a new user.
 - Hideable the profile fields on the registration page and edit the profile page.
 - Admin area block that can be seen and accessed only by the site administrator.
@@ -85,7 +88,7 @@ All features from Boost (native Moodle theme) plus these Trema features:
 
 # Requirements
 
-This theme requires Moodle LMS 4.0+ from https://moodle.org/.
+This theme requires Moodle LMS 4.1+ from https://moodle.org/.
 
 [(Back to top)](#table-of-contents)
 
@@ -182,6 +185,39 @@ Good:
 
 There are many more already available. These will be documented over time.
 
+### What is the recommended image size for course cards?
+
+Trema displays course images using a 7:4 aspect ratio on the Dashboard (Course Overview block) and the course summary. For most sites, **700 x 400 pixels** (7:4) is a good balance between visual quality and page-load performance.
+
+Tips for course images:
+
+- **Crop to 7:4** before uploading. Images with different aspect ratios will be cropped automatically and may lose important content (faces, logos, text).
+- **Use WebP (preferred) for photographs and screenshots** if your web server supports it. WebP files are typically 25-35% smaller than JPG at equivalent quality, and all current browsers display them.
+- **Use JPG for photographs** when WebP is not available.
+- **Use PNG or GIF for drawings, diagrams, and logos.** Flat-colour or text-heavy images compress better in these formats than in JPG or WebP.
+- **Optimize before uploading.** Moodle does not optimize images for you. Tools such as [TinyPNG](https://tinypng.com), [Squoosh](https://squoosh.app), or your image editor's "Save for web" feature can reduce file size by 50-80% with no visible quality loss.
+- **Target under 100 KB per image** where possible. Course listings load many images at once; a single 2 MB image can noticeably slow down the Dashboard.
+
+Note: some sites reuse the course image for other purposes (course certificates, course banners). If you need a larger original for those uses, consider uploading an optimized copy specifically for the course image so the Dashboard remains fast.
+
+### What is the recommended image size for the frontpage banner?
+
+The frontpage banner (carousel or single image) displays full-width with a configurable height. Trema scales the image to fill the banner using CSS `cover`, which means the image is scaled to fill the banner area and any overflow is cropped. Because the banner's proportions change with the browser width and your "Frontpage banner height" setting, **you cannot pixel-match an image to the banner** — the visible crop will differ from one screen to the next. Instead, follow the "safe zone" approach:
+
+- **Use a large landscape image, at least 1920 pixels wide** (for example 1920 × 1080, a 16:9 ratio or wider). One generous image serves every screen size; the browser scales it down as needed.
+- **Keep important content (text, faces, logos) in the centre "safe zone".** The edges and the top/bottom are cropped differently depending on the visitor's screen, so never place key content near the edges.
+- **Leave the centre relatively uncluttered.** The banner title, subtitle, and button overlay the centre of the image, so a busy centre competes with that text.
+- **Don't try to match the height setting exactly.** A taller image simply gives you more vertical safe-margin on narrow or tall (mobile) viewports — when in doubt, go taller.
+
+Tips for banner images:
+
+- **Use WebP (preferred) for photographs** — WebP is typically 25-35% smaller than JPG at equivalent quality, and all current browsers support it.
+- **Use JPG for photographs** when WebP is not available.
+- **Use PNG or GIF for logos or designs with flat colors and text** — they compress better for non-photographic content.
+- **Optimize before uploading.** Moodle does not optimize images. Tools such as [Squoosh](https://squoosh.app) (by Google), [TinyPNG](https://tinypng.com), or your image editor's "Save for web" feature can reduce file size by 50-80% with no visible quality loss.
+- **Target under 200 KB per image** where possible — banner images load on every frontpage view, so file size affects site performance.
+- **Enable "Frontpage banner dark overlay" for best readability** — the overlay darkens the image, ensuring text content is always legible over photographs.
+
 ### Are there any security considerations?
 
 There are no known security considerations at this time.
@@ -214,7 +250,7 @@ The development of this theme was motivated by our own experience in Moodle LMS 
 
 # License
 
-Copyright © 2019-2025 Rodrigo Mady and TNG Consulting Inc.
+Copyright © 2019-2026 Rodrigo Mady and TNG Consulting Inc.
 
 This file is part of Moodle - https://moodle.org/
 

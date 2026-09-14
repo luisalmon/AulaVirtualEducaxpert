@@ -41,8 +41,8 @@ class backup_customcert_activity_structure_step extends backup_activity_structur
         $customcert = new backup_nested_element('customcert', ['id'], [
             'templateid', 'name', 'intro', 'introformat', 'requiredtime', 'verifyany',
             'deliveryoption', 'usecustomfilename', 'customfilenamepattern', 'emailstudents',
-            'emailteachers', 'emailothers', 'protection', 'language', 'timecreated',
-            'timemodified']);
+            'emailteachers', 'emailothers', 'completionemailed', 'protection', 'language',
+            'timecreated', 'timemodified']);
 
         // The template.
         $template = new backup_nested_element('template', ['id'], [
@@ -55,15 +55,15 @@ class backup_customcert_activity_structure_step extends backup_activity_structur
             'sequence', 'timecreated', 'timemodified']);
 
         // The elements.
+        // Note: Legacy columns 'width', 'font', 'fontsize' and 'colour' were removed. Values live in JSON 'data'.
         $element = new backup_nested_element('element', ['id'], [
-            'pageid', 'name', 'element', 'data', 'font', 'fontsize',
-            'colour', 'posx', 'posy', 'width', 'refpoint', 'sequence',
+            'pageid', 'name', 'element', 'data', 'posx', 'posy', 'refpoint', 'sequence',
             'alignment', 'timecreated', 'timemodified']);
 
         // The issues.
         $issues = new backup_nested_element('issues');
         $issue = new backup_nested_element('issue', ['id'], [
-            'customcertid', 'userid', 'timecreated', 'emailed', 'code']);
+            'customcertid', 'userid', 'timecreated', 'emailed', 'studentemailed', 'code']);
 
         // Build the tree.
         $customcert->add_child($issues);

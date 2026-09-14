@@ -19,7 +19,7 @@
  *
  * @package     theme_trema
  * @copyright   2019 Trema - {@link https://trema.tech/}
- * @copyright   2023-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2023-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -41,7 +41,6 @@ class provider implements
     \core_privacy\local\metadata\provider,
     // This plugin has some sitewide user preferences to export.
     \core_privacy\local\request\user_preference_provider {
-
     /** The user preferences for the course index. */
     const DRAWER_OPEN_INDEX = 'drawer-open-index';
 

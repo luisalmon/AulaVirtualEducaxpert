@@ -28,7 +28,6 @@ defined('MOODLE_INTERNAL') || die();
 // This is used for performance, we don't need to know about these settings on every page in Moodle, only when
 // we are looking at the admin settings pages.
 if ($ADMIN->fulltree) {
-
     // Boost provides a nice setting page which splits settings onto separate tabs. We want to use it here.
     $settings = new theme_boost_admin_settingspage_tabs('themesettingmoove', get_string('configtitle', 'theme_moove'));
 
@@ -82,8 +81,14 @@ if ($ADMIN->fulltree) {
     $title = get_string('presetfiles', 'theme_moove');
     $description = get_string('presetfiles_desc', 'theme_moove');
 
-    $setting = new admin_setting_configstoredfile($name, $title, $description, 'preset', 0,
-        ['maxfiles' => 10, 'accepted_types' => ['.scss']]);
+    $setting = new admin_setting_configstoredfile(
+        $name,
+        $title,
+        $description,
+        'preset',
+        0,
+        ['maxfiles' => 10, 'accepted_types' => ['.scss']]
+    );
     $page->add($setting);
 
     // Login page background image.
@@ -165,14 +170,24 @@ if ($ADMIN->fulltree) {
     $page = new admin_settingpage('theme_moove_advanced', get_string('advancedsettings', 'theme_moove'));
 
     // Raw SCSS to include before the content.
-    $setting = new admin_setting_scsscode('theme_moove/scsspre',
-        get_string('rawscsspre', 'theme_moove'), get_string('rawscsspre_desc', 'theme_moove'), '', PARAM_RAW);
+    $setting = new admin_setting_scsscode(
+        'theme_moove/scsspre',
+        get_string('rawscsspre', 'theme_moove'),
+        get_string('rawscsspre_desc', 'theme_moove'),
+        '',
+        PARAM_RAW
+    );
     $setting->set_updatedcallback('theme_reset_all_caches');
     $page->add($setting);
 
     // Raw SCSS to include after the content.
-    $setting = new admin_setting_scsscode('theme_moove/scss', get_string('rawscss', 'theme_moove'),
-        get_string('rawscss_desc', 'theme_moove'), '', PARAM_RAW);
+    $setting = new admin_setting_scsscode(
+        'theme_moove/scss',
+        get_string('rawscss', 'theme_moove'),
+        get_string('rawscss_desc', 'theme_moove'),
+        '',
+        PARAM_RAW
+    );
     $setting->set_updatedcallback('theme_reset_all_caches');
     $page->add($setting);
 
@@ -185,7 +200,12 @@ if ($ADMIN->fulltree) {
     $page->add($setting);
 
     // H5P custom CSS.
-    $setting = new admin_setting_configtextarea('theme_moove/hvpcss', get_string('hvpcss', 'theme_moove'), get_string('hvpcss_desc', 'theme_moove'), '');
+    $setting = new admin_setting_configtextarea(
+        'theme_moove/hvpcss',
+        get_string('hvpcss', 'theme_moove'),
+        get_string('hvpcss_desc', 'theme_moove'),
+        ''
+    );
     $page->add($setting);
 
     $settings->add($page);
@@ -385,6 +405,13 @@ if ($ADMIN->fulltree) {
     $setting = new admin_setting_configtext($name, $title, $description, '');
     $page->add($setting);
 
+    // TikTok url setting.
+    $name = 'theme_moove/tiktok';
+    $title = get_string('tiktok', 'theme_moove');
+    $description = get_string('tiktokdesc', 'theme_moove');
+    $setting = new admin_setting_configtext($name, $title, $description, '');
+    $page->add($setting);
+
     // Facebook url setting.
     $name = 'theme_moove/facebook';
     $title = get_string('facebook', 'theme_moove');
@@ -420,6 +447,13 @@ if ($ADMIN->fulltree) {
     $setting = new admin_setting_configtext($name, $title, $description, '');
     $page->add($setting);
 
+    // Pinterest url setting.
+    $name = 'theme_moove/pinterest';
+    $title = get_string('pinterest', 'theme_moove');
+    $description = get_string('pinterestdesc', 'theme_moove');
+    $setting = new admin_setting_configtext($name, $title, $description, '');
+    $page->add($setting);
+
     // Whatsapp url setting.
     $name = 'theme_moove/whatsapp';
     $title = get_string('whatsapp', 'theme_moove');
@@ -432,6 +466,31 @@ if ($ADMIN->fulltree) {
     $title = get_string('telegram', 'theme_moove');
     $description = get_string('telegramdesc', 'theme_moove');
     $setting = new admin_setting_configtext($name, $title, $description, '');
+    $page->add($setting);
+
+    $settings->add($page);
+
+    /*
+    * --------------------
+    * Footer settings tab
+    * --------------------
+    */
+    $page = new admin_settingpage('theme_moove_darkmode', get_string('darkmodesettings', 'theme_moove'));
+
+    // Enable dark mode footer.
+    $name = 'theme_moove/enabledarkmode';
+    $title = get_string('darkmode_enable', 'theme_moove');
+    $default = 1;
+    $choices = [0 => get_string('no'), 1 => get_string('yes')];
+    $setting = new admin_setting_configselect($name, $title, '', $default, $choices);
+    $page->add($setting);
+
+    // Logo file setting.
+    $name = 'theme_moove/logodark';
+    $title = get_string('logodark', 'theme_moove');
+    $description = get_string('logodarkdesc', 'theme_moove');
+    $opts = ['accepted_types' => ['.png', '.jpg', '.gif', '.webp', '.tiff', '.svg'], 'maxfiles' => 1];
+    $setting = new admin_setting_configstoredfile($name, $title, $description, 'logodark', 0, $opts);
     $page->add($setting);
 
     $settings->add($page);

@@ -18,8 +18,8 @@
  * Lib file.
  *
  * @package     theme_trema
- * @copyright   2019-2025 Trema - {@link https://trema.tech/}
- * @copyright   2023-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright   2019-2026 Trema - {@link https://trema.tech/}
+ * @copyright   2023-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
  * @author      Trevor Furtado
  * @author      Michael Milette
@@ -127,10 +127,10 @@ function theme_trema_get_pre_scss($theme) {
         'Roboto, Arial, Helvetica, sans-serif' => 'Roboto',
     ];
 
-    $scss .= '$bodyfontfile: "' . $fonts[$theme->settings->sitefont] . '";' . PHP_EOL;
-    $scss .= '$bannertitlesfontfile: "' . $fonts[$theme->settings->bannertitlesfont] . '";' . PHP_EOL;
-    $scss .= '$h1fontfile: "' . $fonts[$theme->settings->h1font] . '";' . PHP_EOL;
-    $scss .= '$hxfontfile: "' . $fonts[$theme->settings->hxfont] . '";' . PHP_EOL;
+    $scss .= '$bodyfontfile: "' . ($fonts[$theme->settings->sitefont ?? ''] ?? 'Arial') . '";' . PHP_EOL;
+    $scss .= '$bannertitlesfontfile: "' . ($fonts[$theme->settings->bannertitlesfont ?? ''] ?? 'Arial') . '";' . PHP_EOL;
+    $scss .= '$h1fontfile: "' . ($fonts[$theme->settings->h1font ?? ''] ?? 'Arial') . '";' . PHP_EOL;
+    $scss .= '$hxfontfile: "' . ($fonts[$theme->settings->hxfont ?? ''] ?? 'Arial') . '";' . PHP_EOL;
 
     // ....
     // Show/hide User profile fields.
@@ -140,8 +140,9 @@ function theme_trema_get_pre_scss($theme) {
 
     // Section: General.
     $fields['showprofileemaildisplay'] = '#fitem_id_maildisplay'; // Email display.
-    if (empty($theme->settings->showmoodlenetprofile)) {
-        $fields['showmoodlenetprofile'] = '#fitem_id_moodlenetprofile'; // MoodleNet Profile.
+    if ($CFG->branch < 502 && empty($theme->settings->showmoodlenetprofile)) {
+        // MoodleNet profile field removed from user table in Moodle 5.2+.
+        $fields['showmoodlenetprofile'] = '#fitem_id_moodlenetprofile';
     }
     $fields['showprofilecity'] = '#fitem_id_city'; // City.
     $fields['showprofilecountry'] = '#fitem_id_country'; // Country.
@@ -169,8 +170,10 @@ function theme_trema_get_pre_scss($theme) {
     // Section: Optional.
     $fields['showprofileoptional'] = '#id_moodle_optional';
 
-    // MoodleNet profile ID.
-    $fields['showprofilemoodlenetprofile'] = '#fitem_id_moodlenetprofile';
+    // MoodleNet profile ID (removed from user table in Moodle 5.2+).
+    if ($CFG->branch < 502) {
+        $fields['showprofilemoodlenetprofile'] = '#fitem_id_moodlenetprofile';
+    }
     // ID number.
     $fields['showprofileidnumber'] = 'body#page-user-editadvanced #fitem_id_idnumber,';
     $fields['showprofileidnumber'] .= 'body#page-admin-user-editadvanced #fitem_id_idnumber,';
@@ -235,12 +238,35 @@ function theme_trema_get_pre_scss($theme) {
     if ($theme->settings->loginpagestyle == 'image' && !empty($backgroundimageurl)) {
         $scss .= "\$login-backgroundimage: '$backgroundimageurl';\n";
     } else {
-        $scss .= "\$login-backgroundimage: '[[pix:theme|frontpage/banner]]';\n";
+        $scss .= "\$login-backgroundimage: '[[pix:theme|login/background]]';\n";
     }
 
     // Not image in settings.
     if ($theme->settings->loginpagestyle !== 'image') {
         $scss .= "body.pagelayout-login #page-wrapper { background-image: none; }\n";
+    }
+
+    // Login page fixes for Moodle 5.2+.
+    if ($CFG->branch >= 502) {
+        $scss .= '
+        $spacer: 1rem !default;
+            body#page-login-index {
+                .loginform {
+                    h1.login-heading {
+                        margin: ($spacer * 2) 0;
+                    }
+                    .login-divider {
+                        margin: ($spacer * 0.5) 0;
+                    }
+                }
+            }
+            .pagelayout-login .login-container {
+                background-color: #fff;
+                padding: 3rem;
+                box-shadow: 0 .5rem 1rem rgb(0 0 0 / .15);
+                margin-bottom: 2rem;
+            }
+        ';
     }
 
     // ....

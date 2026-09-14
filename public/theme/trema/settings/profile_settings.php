@@ -18,7 +18,7 @@
  * Settings for Profile fields.
  *
  * @package     theme_trema
- * @copyright   2016-2025 TNG Consulting Inc. <https://www.tngconsulting.ca>
+ * @copyright   2016-2026 TNG Consulting Inc. <https://www.tngconsulting.ca>
  * @author      Michael Milette
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  *
@@ -45,7 +45,10 @@ $profilefieldsections = ['pictureofuser', 'additionalnames', 'interests', 'optio
 // List of user profile fields that we can show or hide.
 $profilefields = [];
 $profilefields[] = 'emaildisplay';
-$profilefields[] = 'moodlenetprofile';
+if (!empty($CFG->branch) && $CFG->branch < 502) {
+    // MoodleNet profile field removed from user table in Moodle 5.2+.
+    $profilefields[] = 'moodlenetprofile';
+}
 $profilefields[] = 'city';
 $profilefields[] = 'country';
 $profilefields[] = 'timezone';

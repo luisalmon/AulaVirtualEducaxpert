@@ -20,7 +20,7 @@ namespace theme_trema;
  * Unit tests for scss compilation.
  *
  * @package   theme_trema
- * @copyright 2024-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright 2024-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author    Michael Milette
  * @copyright 2016 onwards Ankit Agarwal
  * @license   https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -43,6 +43,52 @@ final class scss_test extends \advanced_testcase {
 
         $this->assertNotEmpty(
             \theme_config::load('trema')->get_css_content_debug('scss', null, null)
+        );
+    }
+
+    /**
+     * Test that trema can be compiled using scssphp (the built-in PHP implementation).
+     *
+     * @covers \theme_trema
+     *
+     * @return void
+     */
+    public function test_scss_compilation_with_scssphp(): void {
+        $this->resetAfterTest();
+
+        $this->assertNotEmpty(
+            \theme_config::load('trema')->get_css_content_debug('scss', null, null)
+        );
+    }
+
+    /**
+     * Regression test: banner carousel images must not use background-attachment: fixed.
+     *
+     * background-attachment: scroll, fixed positions the banner image relative to the
+     * viewport rather than the element, causing a zoom/parallax effect. This test ensures
+     * the fix remains in place.
+     *
+     * @covers \theme_trema
+     *
+     * @return void
+     */
+    public function test_banner_background_attachment_not_fixed(): void {
+        $this->resetAfterTest();
+
+        $css = \theme_config::load('trema')->get_css_content_debug('scss', null, null);
+
+        // The bug pattern must not exist: "scroll, fixed" is the culprit.
+        $this->assertStringNotContainsString(
+            'background-attachment: scroll, fixed',
+            $css,
+            'Banner must not use "background-attachment: scroll, fixed" (causes zoom/parallax bug)'
+        );
+
+        // Regression guard: both overlay and banner must scroll naturally.
+        $this->assertStringContainsString(
+            'background-attachment: scroll',
+            $css,
+            'Banner must use "background-attachment: scroll" for natural scrolling'
         );
     }
 }

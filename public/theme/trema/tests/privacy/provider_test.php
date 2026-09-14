@@ -25,7 +25,7 @@ use core_privacy\local\request\writer;
  * @package    theme_trema
  * @category   test
  * @covers     \theme_trema\privacy\provider
- * @copyright  2024-2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
+ * @copyright  2024-2026 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author     Michael Milette
  * @copyright  2018 Adrian Greeve <adriangreeve.com>
  * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -54,6 +54,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
      *
      * @dataProvider export_user_preference_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('export_user_preference_provider')]
     public function test_export_user_preferences(string $preference, bool $value, string $expectdescription): void {
         $this->resetAfterTest();
 

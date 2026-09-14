@@ -15,9 +15,13 @@
 
 /**
  * @module theme_trema/main
- * @description Removes the "show" class from the usermenu dropdown to hide an incorrect arrow
- *              that appears on initial load in Moodle versions 3.9, 4.0, 4.1, and 4.2.
- *              This ensures the arrow is hidden the first time the page is loaded.
+ * @description Frontpage init: hides a stray dropdown "show" class on initial load
+ *              (Moodle 3.9-4.2 quirk), explicitly initializes the frontpage
+ *              carousel so it auto-cycles, and adds left/right touch swipe support.
+ *              Bootstrap 5's data-API auto-init can miss carousels when the JS module
+ *              loads after DOMContentLoaded, and Bootstrap's native touch handling is
+ *              inconsistent across the BS4/BS5 versions this theme supports, so swipe
+ *              gestures are wired up explicitly.
  * @copyright   2023 Rodrigo Mady <rodrigo.mady@moodle.org>
  * @copyright   2025 TNG Consulting Inc. - {@link https://www.tngconsulting.ca/}
  * @author      Rodrigo Mady
@@ -25,15 +29,61 @@
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define([], function() {
+define(['jquery', 'theme_boost/bootstrap/carousel'], function($, CarouselModule) {
+    const Carousel = (CarouselModule && (CarouselModule.default || CarouselModule)) || null;
     return {
         init: function() {
-            // Get the element with the classes "dropdown" and "show"
             const dropdown = document.querySelector(".dropdown.show");
-            // Remove the class "show" from the element if it exists
             if (dropdown) {
                 dropdown.classList.remove("show");
             }
+            const carouselEl = document.getElementById('carouselTrema');
+            if (!carouselEl) {
+                return;
+            }
+            let goNext = function() {};
+            let goPrev = function() {};
+            // Bootstrap 5 (Moodle 4.5+): static getOrCreateInstance.
+            if (Carousel && typeof Carousel.getOrCreateInstance === 'function') {
+                const instance = Carousel.getOrCreateInstance(carouselEl, {ride: 'carousel'});
+                goNext = function() {
+                    instance.next();
+                };
+                goPrev = function() {
+                    instance.prev();
+                };
+            } else if ($.fn && typeof $.fn.carousel === 'function') {
+                // Bootstrap 4 (Moodle 4.1-4.4): jQuery plugin.
+                $(carouselEl).carousel({ride: 'carousel'});
+                goNext = function() {
+                    $(carouselEl).carousel('next');
+                };
+                goPrev = function() {
+                    $(carouselEl).carousel('prev');
+                };
+            }
+            // Left/right touch swipe. Passive listeners: we only read coordinates and
+            // never preventDefault, so vertical page scrolling is unaffected.
+            const swipeThreshold = 40;
+            let startX = 0;
+            let startY = 0;
+            carouselEl.addEventListener('touchstart', function(e) {
+                startX = e.changedTouches[0].screenX;
+                startY = e.changedTouches[0].screenY;
+            }, {passive: true});
+            carouselEl.addEventListener('touchend', function(e) {
+                const deltaX = e.changedTouches[0].screenX - startX;
+                const deltaY = e.changedTouches[0].screenY - startY;
+                // Only act on a dominant horizontal swipe beyond the threshold; this
+                // ignores vertical scrolls and accidental taps.
+                if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > swipeThreshold) {
+                    if (deltaX < 0) {
+                        goNext();
+                    } else {
+                        goPrev();
+                    }
+                }
+            }, {passive: true});
         }
     };
 });

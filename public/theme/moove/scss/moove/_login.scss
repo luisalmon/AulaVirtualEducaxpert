@@ -1,50 +1,65 @@
-.path-login {
+.pagelayout-login {
     #page {
         max-width: 100%;
+        background: none;
     }
 
     .login-identityprovider-btn.facebook {
         background-color: $facebook-color;
         color: #fff;
     }
-}
 
-#page-login-index {
-    .login-container {
-        background-color: initial;
-        box-shadow: none;
-        padding: 0;
+    .loginform {
+        .login-form-forgotpassword {
+            text-align: center;
+        }
 
-        .loginform {
-            margin: 0 auto;
-            background-color: #fff;
-            padding: 2rem;
-            box-shadow: 0 0.5rem 1rem rgb(0 0 0 / 15%);
-            border-radius: 0.5rem;
-
-            .left-column {
-                padding-right: 2rem;
-            }
-
-            .right-column {
-                padding-left: 2rem;
-                border-left: 1px solid $gray-300;
-
-                .column-content {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100%;
-                }
-            }
+        .login-heading {
+            text-align: center;
+            font-weight: 500;
         }
     }
 }
 
 #page-login-signup {
-    #page-content {
-        padding-top: 2rem;
+    .signupform .full-width-labels {
+        display: flex;
+        flex-wrap: wrap;
+
+        #fitem_id_username,
+        #fitem_id_password,
+        #fitem_id_firstname,
+        #fitem_id_lastname,
+        #fitem_id_city,
+        #fitem_id_country {
+            width: 50%;
+        }
+
+        #fitem_id_username,
+        #fitem_id_firstname,
+        #fitem_id_city {
+            padding-right: .5rem;
+        }
+
+        #fitem_id_password,
+        #fitem_id_lastname,
+        #fitem_id_country {
+            padding-left: .5rem;
+        }
+
+        #fitem_id_email,
+        #fitem_id_email2,
+        #fgroup_id_buttonar {
+            width: 100%;
+        }
+    }
+}
+
+@include media-breakpoint-up(md) {
+    #page-login-signup {
+        .login-container {
+            width: 640px !important; /* stylelint-disable-line declaration-no-important */
+        }
     }
 }
 
@@ -53,14 +68,6 @@
         .login-container {
             max-width: 100%;
             width: 100% !important; /* stylelint-disable-line declaration-no-important */
-        }
-
-        .loginform {
-            width: 40%;
-
-            &.hastwocolumns {
-                width: 60%;
-            }
         }
     }
 
