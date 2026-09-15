@@ -1,0 +1,33 @@
+<?php
+defined('MOODLE_INTERNAL') || die();
+
+$string['pluginname'] = 'SenceEducaxpert';
+$string['senceeducaxpert'] = 'SenceEducaxpert';
+$string['senceeducaxpert:addinstance'] = 'Add a SenceEducaxpert block';
+$string['senceeducaxpert:myaddinstance'] = 'Add a SenceEducaxpert block to the Dashboard';
+$string['otec_name'] = 'OTEC name';
+$string['otec_rut'] = 'OTEC RUT (Chilean tax ID)';
+$string['otec_token'] = 'SENCE token';
+$string['support_email'] = 'SENCE support email';
+$string['support_email_desc'] = 'Error alerts are sent here and shown to students.';
+$string['support_whatsapp'] = 'Support WhatsApp';
+$string['support_whatsapp_desc'] = 'Contact number for students (e.g. +56912345678).';
+$string['ambiente'] = 'Working environment';
+$string['ambiente_desc'] = 'Choose whether to use the test or production SENCE URLs.';
+$string['ambiente_prod'] = 'Production (real)';
+$string['ambiente_test'] = 'Test';
+$string['viewhistory'] = 'View SENCE connection history';
+$string['viewhistory_desc'] = 'View the log of every SENCE login/logout recorded.';
+$string['course_code'] = 'Course SENCE code';
+$string['config_header'] = 'Course configuration';
+$string['config_linea'] = 'Training line (Línea de capacitación)';
+$string['config_linea_desc'] = 'Sent to SENCE as "LineaCapacitacion" on every attendance record for this course.';
+$string['credits'] = 'Developed by Luis Almon for EducaXpert.';
+$string['privacy:metadata:block_senceeducaxpert_log'] = 'Log of connections with the SENCE attendance system.';
+$string['privacy:metadata:block_senceeducaxpert_log:userid'] = 'The ID of the user who recorded (or attempted to record) attendance.';
+$string['privacy:metadata:block_senceeducaxpert_log:courseid'] = 'The course the attendance was recorded in.';
+$string['privacy:metadata:block_senceeducaxpert_log:eventtype'] = 'Whether it was a SENCE login or logout.';
+$string['privacy:metadata:block_senceeducaxpert_log:status'] = 'Whether the record succeeded or errored.';
+$string['privacy:metadata:block_senceeducaxpert_log:glosa'] = 'SENCE error code or message, if any.';
+$string['privacy:metadata:block_senceeducaxpert_log:timecreated'] = 'When it was recorded.';
+$string['privacy:metadata:block_senceeducaxpert_log:payload'] = 'The technical data sent to or received from SENCE.';
