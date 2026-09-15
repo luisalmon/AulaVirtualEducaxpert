@@ -2,19 +2,19 @@
 defined('MOODLE_INTERNAL') || die();
 
 $capabilities = array(
-    'block/senceluisalmon:addinstance' => array(
+    'block/senceeducaxpert:addinstance' => array(
         'captype' => 'write',
         'contextlevel' => CONTEXT_BLOCK,
         'archetypes' => array(
-            'manager' => CAP_ALLOW // Solo gestores
+            'manager' => CAP_ALLOW, // Solo gestores.
         ),
-        'clonepermissionsfrom' => 'moodle/site:manageblocks'
+        'clonepermissionsfrom' => 'moodle/site:manageblocks',
     ),
-    'block/senceluisalmon:myaddinstance' => array(
+    'block/senceeducaxpert:myaddinstance' => array(
         'captype' => 'write',
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes' => array(
-            'manager' => CAP_ALLOW
-        )
+            'manager' => CAP_ALLOW,
+        ),
     ),
 );

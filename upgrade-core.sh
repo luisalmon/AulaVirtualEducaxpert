@@ -39,7 +39,7 @@ KEEP_PLUGINS=(
   auth/userkey
   course/format/remuiformat
   question/format/h5p
-  blocks/senceluisalmon
+  blocks/senceeducaxpert
 )
 # Ficheros de la raíz del repo que nunca se tocan.
 # vendor/ NO está aquí a propósito: cada versión de Moodle trae su propio

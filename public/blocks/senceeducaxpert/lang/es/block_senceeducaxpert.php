@@ -1,0 +1,33 @@
+<?php
+defined('MOODLE_INTERNAL') || die();
+
+$string['pluginname'] = 'SenceEducaxpert';
+$string['senceeducaxpert'] = 'SenceEducaxpert';
+$string['senceeducaxpert:addinstance'] = 'Añadir bloque SenceEducaxpert';
+$string['senceeducaxpert:myaddinstance'] = 'Añadir bloque SenceEducaxpert al área personal';
+$string['otec_name'] = 'Nombre de la OTEC';
+$string['otec_rut'] = 'RUT de la OTEC';
+$string['otec_token'] = 'Token SENCE';
+$string['support_email'] = 'Correo de soporte SENCE';
+$string['support_email_desc'] = 'A este correo llegarán las alertas de error y lo verán los alumnos.';
+$string['support_whatsapp'] = 'WhatsApp de soporte';
+$string['support_whatsapp_desc'] = 'Número de contacto para los alumnos (ej: +56912345678).';
+$string['ambiente'] = 'Ambiente de trabajo';
+$string['ambiente_desc'] = 'Seleccione si desea usar las URL de test o de producción.';
+$string['ambiente_prod'] = 'Producción (real)';
+$string['ambiente_test'] = 'Test (pruebas)';
+$string['viewhistory'] = 'Ver historial de conexiones SENCE';
+$string['viewhistory_desc'] = 'Consulte aquí el registro de todos los inicios y cierres de sesión realizados.';
+$string['course_code'] = 'Código SENCE del curso';
+$string['config_header'] = 'Configuración del curso';
+$string['config_linea'] = 'Línea de capacitación';
+$string['config_linea_desc'] = 'Se envía a SENCE como "LineaCapacitacion" en cada registro de asistencia de este curso.';
+$string['credits'] = 'Desarrollado por Luis Almon para EducaXpert.';
+$string['privacy:metadata:block_senceeducaxpert_log'] = 'Registro de conexiones con el sistema de asistencia SENCE.';
+$string['privacy:metadata:block_senceeducaxpert_log:userid'] = 'El ID del usuario que registró (o intentó registrar) asistencia.';
+$string['privacy:metadata:block_senceeducaxpert_log:courseid'] = 'El curso en el que se registró la asistencia.';
+$string['privacy:metadata:block_senceeducaxpert_log:eventtype'] = 'Si fue un inicio o un cierre de sesión SENCE.';
+$string['privacy:metadata:block_senceeducaxpert_log:status'] = 'Si el registro fue exitoso o tuvo error.';
+$string['privacy:metadata:block_senceeducaxpert_log:glosa'] = 'Código o mensaje de error de SENCE, si lo hubo.';
+$string['privacy:metadata:block_senceeducaxpert_log:timecreated'] = 'Cuándo se registró.';
+$string['privacy:metadata:block_senceeducaxpert_log:payload'] = 'Los datos técnicos enviados o recibidos de SENCE.';
