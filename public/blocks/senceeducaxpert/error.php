@@ -15,10 +15,9 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * URL de error de SENCE: destino externo (SENCE redirige aquí cuando su
- * registro falla). Requiere sesión activa -antes no la pedía, lo que
- * permitía a cualquiera, incluso sin login, insertar registros y disparar
- * el correo de soporte-.
+ * URL de error de SENCE: destino externo, mismo mecanismo de token que
+ * exito.php (SENCE vuelve por POST entre sitios, sin la cookie de sesión
+ * de Moodle).
  *
  * @package    block_senceeducaxpert
  * @copyright  2026 Luis Almon (EducaXpert)
@@ -26,13 +25,43 @@
  */
 
 require_once('../../config.php');
+// block_senceeducaxpert extends block_base: normalmente lo carga el gestor de
+// bloques, pero aquí se usa la clase directamente (fuera de ese flujo) para
+// llegar a sus métodos estáticos de token.
+require_once($CFG->dirroot . '/blocks/moodleblock.class.php');
+require_once($CFG->dirroot . '/blocks/senceeducaxpert/block_senceeducaxpert.php');
+
+global $PAGE, $OUTPUT, $CFG, $DB, $USER;
 
 $courseid = required_param('id', PARAM_INT);
-require_login($courseid);
-
-global $PAGE, $OUTPUT, $CFG, $DB, $USER, $SESSION;
-
+$tokenparam = optional_param('t', '', PARAM_ALPHANUM);
 $glosaid = optional_param('GlosaError', '0', PARAM_TEXT);
+
+$identity = block_senceeducaxpert::resolve_return_token($tokenparam, $courseid);
+
+if ($identity !== null && (!isloggedin() || isguestuser() || $USER->id != $identity->userid)) {
+    // Token válido: restablecemos la sesión real del alumno (misma función
+    // que usa auth_userkey en este sitio).
+    $returninguser = $DB->get_record('user', ['id' => $identity->userid], '*', MUST_EXIST);
+    complete_user_login($returninguser);
+}
+
+if (!isloggedin() || isguestuser()) {
+    // Sin token válido y sin sesión: acceso directo por URL, no la vuelta
+    // real de SENCE.
+    require_login($courseid);
+}
+
+$userid = $USER->id;
+$user = $USER;
+
+$hoyts = strtotime('today');
+$yainicio = $DB->record_exists_select(
+    'block_senceeducaxpert_log',
+    "userid = ? AND courseid = ? AND eventtype = 'inicio' AND status = 'exito' AND timecreated >= ?",
+    [$userid, $courseid, $hoyts]
+);
+$eventtype = $yainicio ? 'cierre' : 'inicio';
 
 $payload = array(
     'DATOS_ENVIADOS_A_SENCE' => array(
@@ -46,9 +75,9 @@ $payload = array(
 );
 
 $log = new stdClass();
-$log->userid = $USER->id;
+$log->userid = $userid;
 $log->courseid = $courseid;
-$log->eventtype = isset($SESSION->sence_sesion_id) ? 'cierre' : 'inicio';
+$log->eventtype = $eventtype;
 $log->status = 'error';
 $log->glosa = $glosaid;
 $log->timecreated = time();
@@ -101,7 +130,7 @@ if (!empty($supportemail)) {
     $asunto = "Alerta SENCE: Error en curso ID {$courseid}";
 
     $mensajehtml = '<h3>Error en Validación SENCE</h3>';
-    $mensajehtml .= '<p>El alumno <strong>' . s(fullname($USER)) . '</strong> (RUT: ' . s($USER->idnumber) . ') no pudo registrar su asistencia.</p>';
+    $mensajehtml .= '<p>El alumno <strong>' . s(fullname($user)) . '</strong> (RUT: ' . s($user->idnumber) . ') no pudo registrar su asistencia.</p>';
     $mensajehtml .= '<ul>';
     $mensajehtml .= '<li><strong>Código de Error:</strong> ' . s($glosaid) . '</li>';
     $mensajehtml .= '<li><strong>Mensaje SENCE:</strong> ' . s($mensajeerror) . '</li>';

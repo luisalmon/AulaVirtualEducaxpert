@@ -417,6 +417,12 @@ class block_senceeducaxpert extends block_base {
         // Se consulta la BD directamente para evitar el RUT desactualizado por caché de sesión.
         $rutestudiante = $DB->get_field('user', 'idnumber', array('id' => $USER->id));
 
+        // SENCE vuelve a exito.php/error.php mediante un POST entre sitios: el
+        // navegador no manda la cookie de sesión de Moodle en ese salto
+        // (SameSite), así que require_login() ahí no reconocería al usuario.
+        // Se identifica en su lugar con un token de un solo uso.
+        $returntoken = self::create_return_token($USER->id, $courseid);
+
         $fields = array(
             'RutOtec' => get_config('block_senceeducaxpert', 'otec_rut'),
             'Token' => get_config('block_senceeducaxpert', 'otec_token'),
@@ -425,8 +431,8 @@ class block_senceeducaxpert extends block_base {
             'LineaCapacitacion' => $lineacapacitacion,
             'RunAlumno' => $rutestudiante,
             'IdSesionAlumno' => $USER->id . '-' . time(),
-            'UrlRetoma' => $CFG->wwwroot . '/blocks/senceeducaxpert/exito.php?id=' . $courseid,
-            'UrlError' => $CFG->wwwroot . '/blocks/senceeducaxpert/error.php?id=' . $courseid,
+            'UrlRetoma' => $CFG->wwwroot . '/blocks/senceeducaxpert/exito.php?id=' . $courseid . '&t=' . $returntoken,
+            'UrlError' => $CFG->wwwroot . '/blocks/senceeducaxpert/error.php?id=' . $courseid . '&t=' . $returntoken,
         );
 
         $f = '<form method="post" action="' . s($url) . '">';
@@ -437,5 +443,65 @@ class block_senceeducaxpert extends block_base {
         $f .= '</form>';
 
         return $f;
+    }
+
+    /**
+     * Crea un token de un solo uso que identifica a un alumno/curso, para
+     * usar en UrlRetoma/UrlError. SENCE vuelve por un POST entre sitios y
+     * el navegador no manda la cookie de sesión de Moodle en ese salto, así
+     * que exito.php/error.php no pueden depender de require_login() para
+     * saber quién es -se identifican con este token en su lugar-.
+     *
+     * @param int $userid
+     * @param int $courseid
+     * @return string
+     */
+    public static function create_return_token(int $userid, int $courseid): string {
+        global $DB;
+
+        $record = new stdClass();
+        $record->token = random_string(64);
+        $record->userid = $userid;
+        $record->courseid = $courseid;
+        $record->timecreated = time();
+
+        $DB->insert_record('block_senceeducaxpert_tokens', $record);
+
+        return $record->token;
+    }
+
+    /**
+     * Resuelve y consume (borra) un token de retorno. Un token solo sirve
+     * una vez y caduca a los 30 minutos.
+     *
+     * @param string $token
+     * @param int $courseid El curso esperado, debe coincidir con el del token.
+     * @return stdClass|null Objeto con ->userid si el token es válido, null si no.
+     */
+    public static function resolve_return_token(string $token, int $courseid): ?stdClass {
+        global $DB;
+
+        if (empty($token)) {
+            return null;
+        }
+
+        $record = $DB->get_record('block_senceeducaxpert_tokens', ['token' => $token]);
+        if (!$record) {
+            return null;
+        }
+
+        // Un solo uso: se borra se use o no (evita reintentos/replay).
+        $DB->delete_records('block_senceeducaxpert_tokens', ['id' => $record->id]);
+
+        $treintaminutos = 1800;
+        if ($record->timecreated < (time() - $treintaminutos)) {
+            return null;
+        }
+
+        if ((int) $record->courseid !== $courseid) {
+            return null;
+        }
+
+        return $record;
     }
 }
