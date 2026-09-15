@@ -16,9 +16,12 @@
 
 /**
  * URL de retoma de SENCE: aquí redirige el portal SENCE tras un inicio/cierre
- * de sesión exitoso. Es un destino EXTERNO (SENCE hace el POST, no nuestro
- * propio JS), así que no lleva sesskey -no lo puede generar SENCE-; la
- * mitigación es exigir sesión Moodle activa + POST no vacío.
+ * de sesión exitoso. SENCE hace un POST entre sitios (no nuestro propio JS),
+ * y el navegador no manda la cookie de sesión de Moodle en ese salto
+ * (SameSite) -así que NO se puede depender de require_login() para saber
+ * quién es el alumno-. Se identifica con el token de un solo uso que se
+ * generó justo antes de mandarlo a SENCE (ver
+ * block_senceeducaxpert::create_return_token()).
  *
  * @package    block_senceeducaxpert
  * @copyright  2026 Luis Almon (EducaXpert)
@@ -26,19 +29,43 @@
  */
 
 require_once('../../config.php');
+// block_senceeducaxpert extends block_base: normalmente lo carga el gestor de
+// bloques, pero aquí se usa la clase directamente (fuera de ese flujo) para
+// llegar a sus métodos estáticos de token.
+require_once($CFG->dirroot . '/blocks/moodleblock.class.php');
+require_once($CFG->dirroot . '/blocks/senceeducaxpert/block_senceeducaxpert.php');
+
+global $CFG, $DB, $USER;
 
 $courseid = required_param('id', PARAM_INT);
-require_login($courseid);
-
-global $SESSION, $CFG, $DB, $USER;
-
+$tokenparam = optional_param('t', '', PARAM_ALPHANUM);
 $idsesionsence = optional_param('IdSesionSence', null, PARAM_RAW);
+
+$identity = block_senceeducaxpert::resolve_return_token($tokenparam, $courseid);
+
+if ($identity !== null && (!isloggedin() || isguestuser() || $USER->id != $identity->userid)) {
+    // Token válido: restablecemos la sesión real del alumno (misma función
+    // que usa auth_userkey en este sitio) para que el resto de la página
+    // -y la cookie que se manda de vuelta al navegador- se comporten como
+    // si nunca se hubiera perdido la sesión.
+    $returninguser = $DB->get_record('user', ['id' => $identity->userid], '*', MUST_EXIST);
+    complete_user_login($returninguser);
+}
+
+if (!isloggedin() || isguestuser()) {
+    // Sin token válido y sin sesión: acceso directo por URL, no la vuelta
+    // real de SENCE. require_login() redirige al login, que es lo correcto
+    // aquí.
+    require_login($courseid);
+}
+
+$userid = $USER->id;
 
 // Antitrampas: SENCE siempre hace un POST al retomar. Un GET (URL tecleada a
 // mano) o un POST vacío se bloquean y se auditan.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST)) {
     $logtrampa = new stdClass();
-    $logtrampa->userid = $USER->id;
+    $logtrampa->userid = $userid;
     $logtrampa->courseid = $courseid;
     $logtrampa->eventtype = 'inicio';
     $logtrampa->status = 'error';
@@ -53,6 +80,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST)) {
     redirect($CFG->wwwroot . '/course/view.php?id=' . $courseid);
 }
 
+// "Inicio" o "cierre": si ya hay un inicio exitoso hoy para este alumno y
+// curso, esta vuelta es el cierre. No se puede usar $SESSION para esto -no
+// hay continuidad de sesión en un POST entre sitios sin cookie-.
+$hoyts = strtotime('today');
+$yainicio = $DB->record_exists_select(
+    'block_senceeducaxpert_log',
+    "userid = ? AND courseid = ? AND eventtype = 'inicio' AND status = 'exito' AND timecreated >= ?",
+    [$userid, $courseid, $hoyts]
+);
+$eventtype = $yainicio ? 'cierre' : 'inicio';
+
 $payload = array(
     'INFO_OTEC' => array(
         'RutOtec' => get_config('block_senceeducaxpert', 'otec_rut'),
@@ -62,20 +100,14 @@ $payload = array(
 );
 
 $log = new stdClass();
-$log->userid = $USER->id;
+$log->userid = $userid;
 $log->courseid = $courseid;
-$log->eventtype = isset($SESSION->sence_sesion_id) ? 'cierre' : 'inicio';
+$log->eventtype = $eventtype;
 $log->status = 'exito';
 $log->glosa = 'Conexión Exitosa';
 $log->payload = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 $log->timecreated = time();
 
 $DB->insert_record('block_senceeducaxpert_log', $log);
-
-if ($idsesionsence) {
-    $SESSION->sence_sesion_id = $idsesionsence;
-} else {
-    unset($SESSION->sence_sesion_id);
-}
 
 redirect($CFG->wwwroot . '/course/view.php?id=' . $courseid);

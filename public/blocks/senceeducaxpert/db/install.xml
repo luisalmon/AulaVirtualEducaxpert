@@ -32,5 +32,19 @@
         <KEY NAME="groupid" TYPE="unique" FIELDS="groupid"/>
       </KEYS>
     </TABLE>
+
+    <TABLE NAME="block_senceeducaxpert_tokens" COMMENT="Tokens de un solo uso para identificar al alumno cuando SENCE vuelve por POST entre sitios (sin la cookie de sesión de Moodle)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="token" TYPE="char" LENGTH="64" NOTNULL="true" COMMENT="Token aleatorio, va en UrlRetoma/UrlError"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Alumno que inició el registro"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="Curso en el que se inició"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="token" TYPE="unique" FIELDS="token"/>
+      </KEYS>
+    </TABLE>
   </TABLES>
 </XMLDB>
