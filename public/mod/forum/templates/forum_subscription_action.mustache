@@ -23,6 +23,11 @@
     * data-region
     Context variables required for this template:
     * see mod/forum/classes/output/subscription_actionbar.php
+    * subscriptionoptions - core/url_select data for the subscription mode selector.
+    * viewandmanageselectmenu - core/select_menu data for the view and manage subscribers selector.
+    * viewandmanageselect - Deprecated since Moodle 5.3, use viewandmanageselectmenu instead.
+      core/url_select data for the view and manage subscribers selector. Not used by this template.
+      @todo: MDL-89964 Final deprecation on Moodle 7.0.
     Example context (json):
     {
         "subscriptionoptions": {
@@ -43,23 +48,29 @@
                 }
             ]
         },
-        "viewandmanageselect": {
-            "formid": "selectviewandmanagesubscribers",
-            "classes": "urlselect",
+        "viewandmanageselectmenu": {
+            "name": "selectviewandmanagesubscribers",
+            "value": "/mod/forum/subscribers.php?id=3&edit=off",
+            "baseid": "select-menu56789",
             "label": "Subscribers",
-            "disabled": false,
-            "sesskey": "abcdef",
-            "action": "http://localhost/course/jumpto.php",
+            "labelattributes": [{"name": "class", "value": "accesshide"}],
+            "selectedoption": "View subscribers",
+            "inlinelabel": false,
+            "disableactive": false,
             "options": [
                 {
                     "name": "View subscribers",
                     "value": "/mod/forum/subscribers.php?id=3&edit=off",
-                    "selected": true
-                 },
+                    "selected": true,
+                    "id": "select-menu-option1",
+                    "disableactive": false
+                },
                 {
                     "name": "Manage subscribers",
                     "value": "/mod/forum/subscribers.php?id=3&edit=on",
-                    "selected": false
+                    "selected": false,
+                    "id": "select-menu-option2",
+                    "disableactive": false
                 }
             ]
         }
@@ -67,11 +78,11 @@
 }}
 <div class="container-fluid tertiary-navigation">
     <div class="d-flex">
-        {{#viewandmanageselect}}
+        {{#viewandmanageselectmenu}}
             <div class="navitem">
-                {{>core/url_select}}
+                {{>core/tertiary_navigation_selector}}
             </div>
-        {{/viewandmanageselect}}
+        {{/viewandmanageselectmenu}}
         {{#subscriptionoptions}}
             <div class="navitem ms-sm-auto">
                 {{>core/url_select}}

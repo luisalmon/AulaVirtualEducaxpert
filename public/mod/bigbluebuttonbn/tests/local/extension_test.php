@@ -17,6 +17,7 @@ namespace mod_bigbluebuttonbn\local;
 
 use backup;
 use backup_controller;
+use core_component;
 use mod_bigbluebuttonbn\broker;
 use mod_bigbluebuttonbn\completion\custom_completion;
 use mod_bigbluebuttonbn\extension;
@@ -36,8 +37,17 @@ use restore_dbops;
  * @copyright 2023 - present, Blindside Networks Inc
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @author    Laurent David (laurent@call-learning.fr)
- * @coversDefaultClass \mod_bigbluebuttonbn\extension
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_bigbluebuttonbn\extension::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_bigbluebuttonbn\test\subplugins_test_helper_trait::class, 'setup_fake_plugin')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_bigbluebuttonbn\extension::class, 'get_instances_implementing')]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_bigbluebuttonbn\local\extension\mod_instance_helper::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_bigbluebuttonbn\extension::class, 'action_url_addons')]
+#[\PHPUnit\Framework\Attributes\CoversClass(\backup_bigbluebuttonbn_activity_task::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_bigbluebuttonbn\local\extension\custom_completion_addons::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_bigbluebuttonbn\local\extension\broker_meeting_events_addons::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_bigbluebuttonbn\extension::class, 'get_sorted_plugins_list')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_bigbluebuttonbn\plugininfo\bbbext::class, 'get_enabled_plugins')]
 final class extension_test extends \advanced_testcase {
     use subplugins_test_helper_trait;
     use testcase_helper_trait;
@@ -66,15 +76,31 @@ final class extension_test extends \advanced_testcase {
     }
 
     /**
+     * Test fake plugins are loaded before existing subplugins.
+     */
+    public function test_setup_fake_plugin_prepends_to_existing_subplugins(): void {
+        $this->setup_fake_plugin('complex');
+        $this->resetDebugging();
+
+        try {
+            $plugins = core_component::get_plugin_list(extension::BBB_EXTENSION_PLUGIN_NAME);
+            $this->assertSame('complex', array_key_first($plugins));
+
+            $subplugins = core_component::get_subplugins('mod_bigbluebuttonbn');
+            $this->assertSame('complex', $subplugins[extension::BBB_EXTENSION_PLUGIN_NAME][0]);
+        } finally {
+            $this->uninstall_fake_plugin('complex');
+        }
+    }
+
+    /**
      * Test for the type_text provider.
      *
      * @param bool $bbbenabled
      * @param string $apiclass
      * @param array $extensionclasses
-     *
-     * @dataProvider classes_implementing_class
-     * @covers       \mod_bigbluebuttonbn\extension::get_instances_implementing
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('classes_implementing_class')]
     public function test_get_class_implementing(bool $bbbenabled, string $apiclass, array $extensionclasses): void {
         $this->enable_plugins($bbbenabled);
         // Make the method public so we can test it.
@@ -94,7 +120,6 @@ final class extension_test extends \advanced_testcase {
      * Test the add module callback
      *
      * @return void
-     * @covers \mod_bigbluebuttonbn\local\extension\mod_instance_helper
      */
     public function test_mod_instance_helper_add(): void {
         global $DB;
@@ -113,7 +138,6 @@ final class extension_test extends \advanced_testcase {
      * Test the update module callback
      *
      * @return void
-     * @covers \mod_bigbluebuttonbn\local\extension\mod_instance_helper
      */
     public function test_mod_instance_helper_update(): void {
         global $DB;
@@ -134,7 +158,6 @@ final class extension_test extends \advanced_testcase {
      * Test delete module callback
      *
      * @return void
-     * @covers \mod_bigbluebuttonbn\local\extension\mod_instance_helper
      */
     public function test_mod_instance_helper_delete(): void {
         global $DB;
@@ -153,7 +176,6 @@ final class extension_test extends \advanced_testcase {
      * Test the action_url_addons with plugin enabled
      *
      * @return void
-     * @covers \mod_bigbluebuttonbn\extension::action_url_addons
      */
     public function test_action_url_addons(): void {
         // Enable plugin.
@@ -176,7 +198,6 @@ final class extension_test extends \advanced_testcase {
      * Test the action_url_addons with plugin enabled
      *
      * @return void
-     * @covers \mod_bigbluebuttonbn\extension::action_url_addons
      */
     public function test_join_url_with_additional_field(): void {
         $this->initialise_mock_server();
@@ -194,8 +215,6 @@ final class extension_test extends \advanced_testcase {
 
     /**
      * Test backup restore (with extension)
-     *
-     * @covers       \backup_bigbluebuttonbn_activity_task
      */
     public function test_backup_restore(): void {
         global $DB, $CFG, $USER;
@@ -269,9 +288,8 @@ final class extension_test extends \advanced_testcase {
      * @param array $events
      * @param int $expectedstate
      * @return void
-     * @dataProvider custom_completion_data_provider
-     * @covers \mod_bigbluebuttonbn\local\extension\custom_completion_addons
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('custom_completion_data_provider')]
     public function test_additional_completion(array $customcompletionrules, array $events, int $expectedstate): void {
         // Enable plugin.
         $this->enable_plugins(true);
@@ -374,7 +392,6 @@ final class extension_test extends \advanced_testcase {
     /**
      * Test broker meeting_events with and without addons.
      * @return void
-     * @covers \mod_bigbluebuttonbn\local\extension\broker_meeting_events_addons
      */
     public function test_broker_meeting_events_addons(): void {
         $this->resetAfterTest();
@@ -446,9 +463,8 @@ final class extension_test extends \advanced_testcase {
      * @param array $sortorders
      * @param array $expected
      * @return void
-     * @dataProvider sorted_plugins_list_data_provider
-     * @covers \mod_bigbluebuttonbn\extension::get_sorted_plugins_list
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('sorted_plugins_list_data_provider')]
     public function test_get_sorted_plugins_list(array $sortorders, array $expected): void {
         $this->resetAfterTest();
         // Enable plugin.
@@ -492,13 +508,12 @@ final class extension_test extends \advanced_testcase {
      * Test that bbbext subplugins are returned only when both the parent module
      * and subplugin are enabled.
      *
-     * @dataProvider enabled_plugins_provider
-     * @covers \mod_bigbluebuttonbn\plugininfo\bbbext::get_enabled_plugins
      *
      * @param bool $bbbenabled Whether the BigBlueButton module is enabled.
      * @param bool $subplugindisabled Whether the subplugin is disabled.
      * @param bool $expectedenabled Whether the subplugin should be returned as enabled.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('enabled_plugins_provider')]
     public function test_get_enabled_plugins(
         bool $bbbenabled,
         bool $subplugindisabled,

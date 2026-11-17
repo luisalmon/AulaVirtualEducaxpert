@@ -18,7 +18,7 @@
  * This file contains the form for loading customcert templates.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -39,7 +39,7 @@ require_once($CFG->libdir . '/formslib.php');
  * The form for loading customcert templates.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class load_template_form extends moodleform {
@@ -49,7 +49,6 @@ class load_template_form extends moodleform {
     public function definition() {
         $mform =& $this->_form;
 
-        // Get the context.
         $context = $this->_customdata['context'];
         $syscontext = context_system::instance();
 
@@ -57,7 +56,6 @@ class load_template_form extends moodleform {
 
         $mform->addElement('header', 'loadtemplateheader', get_string('loadtemplate', 'customcert'));
 
-        // Display a link to the manage templates page.
         if ($context->contextlevel != CONTEXT_SYSTEM && has_capability('mod/customcert:manage', $syscontext)) {
             $link = html_writer::link(
                 new moodle_url('/mod/customcert/manage_templates.php'),

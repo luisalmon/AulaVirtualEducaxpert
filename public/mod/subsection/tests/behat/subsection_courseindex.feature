@@ -68,6 +68,8 @@ Feature: Users view the course index with subsections
     And I click on "Close course index" "button"
     And I click on "Open course index" "button"
     And I press the tab key
+    And the focused element is ".courseindex-collapsemenu" "css_element"
+    And I press the tab key
     And the focused element is "#course-index [data-for='section'][data-number='0']" "css_element"
     And I press the down key
     And the focused element is "#course-index [data-for='section'][data-number='1']" "css_element"
@@ -84,3 +86,17 @@ Feature: Users view the course index with subsections
     And I change window size to "large"
     And I should see "Subsection1" in the "courseindex-content" "region"
     Then the "#course-index" "css_element" should meet accessibility standards with "best-practice" extra tests
+
+  @javascript @accessibility
+  Scenario: Course index subsection links stay in sync when an earlier section is deleted
+    Given I am on the "C1" "Course" page logged in as "teacher1"
+    And I change window size to "large"
+    And I turn editing mode on
+    And the "href" attribute of "#courseindexsection5-title" "css_element" should contain "#section-5"
+    When I delete section "2"
+    And I click on "Delete" "button" in the ".modal" "css_element"
+    Then the "href" attribute of "#courseindexsection4-title" "css_element" should contain "#section-4"
+    And "#courseindexsection5-title" "css_element" should not exist
+    And the "aria-owns" attribute of "#course-index [data-for='cm'][aria-labelledby='courseindexsection4-title']" "css_element" should contain "courseindexcollapse4"
+    And "#course-index [data-for='cm'][aria-labelledby='courseindexsection5-title']" "css_element" should not exist
+    And the "#course-index" "css_element" should meet accessibility standards with "best-practice" extra tests

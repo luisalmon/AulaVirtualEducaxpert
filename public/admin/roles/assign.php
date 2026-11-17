@@ -62,6 +62,7 @@ if ($returnurl) {
 $PAGE->set_url($pageurl);
 $PAGE->set_context($context);
 $PAGE->activityheader->disable();
+$PAGE->set_show_navigation_footer(false);
 
 $contextname = $context->get_context_name();
 $courseid = $course->id;
@@ -322,7 +323,7 @@ if ($roleid) {
     $table->id = 'assignrole';
     $table->head = array(get_string('role'), get_string('description'), get_string('userswiththisrole', 'core_role'));
     $table->colclasses = array('leftalign role', 'leftalign', 'centeralign userrole');
-    $table->attributes['class'] = 'admintable table generaltable table-hover';
+    $table->attributes['class'] = 'admintable table generaltable table-striped table-hover';
     if ($showroleholders) {
         $table->headspan = array(1, 1, 2);
         $table->colclasses[] = 'leftalign roleholder';

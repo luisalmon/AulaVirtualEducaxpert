@@ -41,9 +41,10 @@ Feature: We can use calculated grade totals
       | assign   | C1     | a8       | Test assignment eight | Submit something! | Sub category 2 & | 20    |
       | assign   | C1     | a9       | Test assignment nine  | Submit something! | Sub category 2 & | 10    |
       | assign   | C1     | 10       | Test assignment ten   | Submit nothing!   | Sub category 2 & | 15    |
-    And I log in as "admin"
-    And I set the following administration settings values:
-      | grade_aggregations_visible | Mean of grades,Weighted mean of grades,Simple weighted mean of grades,Mean of grades (with extra credits),Median of grades,Lowest grade,Highest grade,Mode of grades,Natural |
+    # All nine aggregation methods: Mean(0), Median(2), Lowest(4), Highest(6),
+    # Mode(8), Weighted mean(10), Simple weighted mean(11), Extra credits(12), Natural(13).
+    And the following config values are set as admin:
+      | grade_aggregations_visible | 0,2,4,6,8,10,11,12,13 |
     And the following "grade grades" exist:
       | gradeitem             | user     | grade |
       | Test assignment one & | student1 | 60.00 |
@@ -247,9 +248,9 @@ Feature: We can use calculated grade totals
       | Test outcome item one | C1     | OT1     | Scale     | Test Scale |
     And I navigate to "Setup > Gradebook setup" in the course gradebook
     And I set the following settings for grade item "Course 1" of type "course" on "setup" page:
-      | Aggregation                     | Natural |
-      | Include outcomes in aggregation | 1       |
-      | Exclude empty grades            | 0       |
+      | Aggregation                              | Natural |
+      | Include learning outcomes in aggregation | 1       |
+      | Exclude empty grades                     | 0       |
     # Change window size to ultra-wide to avoid 'element-click-intercepted' failures.
     And I change window size to "5120x2160"
     And I navigate to "View > Grader report" in the course gradebook
@@ -276,8 +277,8 @@ Feature: We can use calculated grade totals
     And "Test outcome item one" row "Grade" column of "user-grade" table should contain "Excellent (100.00 %)"
     And I am on the "Course 1" "grades > gradebook setup" page logged in as "teacher1"
     And I set the following settings for grade item "Course 1" of type "course" on "setup" page:
-      | Aggregation                     | Natural |
-      | Include outcomes in aggregation | 0       |
+      | Aggregation                              | Natural |
+      | Include learning outcomes in aggregation | 0       |
     And I press "Save"
     And I log out
     And I log in as "student1"
@@ -300,9 +301,9 @@ Feature: We can use calculated grade totals
       | Test outcome item one | C1     | OT1     | Scale     | Test Scale |
     And I navigate to "Setup > Gradebook setup" in the course gradebook
     And I set the following settings for grade item "Course 1" of type "course" on "setup" page:
-      | Aggregation                     | Natural |
-      | Include outcomes in aggregation | 1       |
-      | Exclude empty grades            | 0       |
+      | Aggregation                              | Natural |
+      | Include learning outcomes in aggregation | 1       |
+      | Exclude empty grades                     | 0       |
     And I set the following settings for grade item "Test outcome item one" of type "gradeitem" on "setup" page:
       | Weight adjusted  | 1   |
       | aggregationcoef2 | 100 |

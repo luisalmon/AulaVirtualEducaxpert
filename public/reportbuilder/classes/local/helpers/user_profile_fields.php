@@ -129,13 +129,11 @@ class user_profile_fields {
                 new lang_string('customfieldcolumn', 'core_reportbuilder', $profilefield->display_name(false)),
                 $this->entityname
             ))
-                ->add_joins($this->get_joins())
                 ->add_join($this->get_table_join($profilefield))
                 ->set_type($columntype)
                 ->add_field($userinfosql, 'data')
                 ->add_field("{$userinfotablealias}.dataformat")
                 ->add_field($this->usertablefieldalias, 'userid')
-                ->set_is_sortable(true)
                 ->add_callback(static function($value, stdClass $row, profile_field_base $field): string {
                     if ($row->userid === null && $value === null) {
                         return '';
@@ -209,7 +207,6 @@ class user_profile_fields {
                 $userinfosql,
                 $userinfoparams,
             ))
-                ->add_joins($this->get_joins())
                 ->add_join($this->get_table_join($profilefield))
                 ->set_is_available($profilefield->is_visible(system::instance()));
 

@@ -18,7 +18,7 @@
  * Manage customcert templates.
  *
  * @package    mod_customcert
- * @copyright  2016 Mark Nelson <markn@moodle.com>
+ * @copyright  2016 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -50,15 +50,18 @@ if ($tid) {
 $context = context::instance_by_id($contextid);
 
 require_login();
-require_capability('mod/customcert:manage', $context);
+if ($tid) {
+    // Check capability against the template's own context, not the caller-supplied $contextid.
+    $template->require_manage();
+} else {
+    require_capability('mod/customcert:manage', $context);
+}
 
 $title = $SITE->fullname;
 
-// Set up the page.
 $pageurl = new moodle_url('/mod/customcert/manage_templates.php');
 page_helper::page_setup($pageurl, $context, $title);
 
-// Additional page setup.
 if ($tid && $action && confirm_sesskey()) {
     $PAGE->navbar->add(
         get_string('managetemplates', 'customcert'),
@@ -81,10 +84,8 @@ if ($tid) {
             ]
         );
 
-        // Check if we are deleting a template.
         if ($action == 'delete') {
             if (!$confirm) {
-                // Show a confirmation page.
                 $PAGE->navbar->add(get_string('deleteconfirm', 'customcert'));
                 $message = get_string('deletetemplateconfirm', 'customcert');
                 echo $OUTPUT->header();
@@ -93,15 +94,12 @@ if ($tid) {
                 exit();
             }
 
-            // Delete the template.
             $templateservice = template_service::create();
             $templateservice->delete($template);
 
-            // Redirect back to the manage templates page.
             redirect(new moodle_url('/mod/customcert/manage_templates.php'));
         } else if ($action == 'duplicate') {
             if (!$confirm) {
-                // Show a confirmation page.
                 $PAGE->navbar->add(get_string('duplicateconfirm', 'customcert'));
                 $message = get_string('duplicatetemplateconfirm', 'customcert');
                 echo $OUTPUT->header();
@@ -115,7 +113,6 @@ if ($tid) {
             $name = $template->get_name() . ' (' . strtolower(get_string('duplicate', 'customcert')) . ')';
             $service->duplicate($template->get_id(), $name);
 
-            // Redirect back to the manage templates page.
             redirect(new moodle_url('/mod/customcert/manage_templates.php'));
         }
     }

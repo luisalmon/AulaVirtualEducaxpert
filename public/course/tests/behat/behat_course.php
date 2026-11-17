@@ -2182,11 +2182,21 @@ class behat_course extends behat_base {
      * @Given /^I open the activity chooser$/
      */
     public function i_open_the_activity_chooser() {
-        // Open the "Activity or resource and Subsection" dropdown first.
-        $this->execute('behat_general::i_click_on',
-                ['//button[@data-action="open-addingcontent"]', 'xpath_element']);
-        $this->execute('behat_general::i_click_on',
-            ['//button[@data-action="open-chooser"]', 'xpath_element']);
+        // Only the always visible divider is clickable, the ones between activities are shown on hover only.
+        $region = '[data-region="always-visible-add-content"]';
+        $page = $this->getSession()->getPage();
+
+        // The dropdown is only rendered when there are extra action links (for example, subsections).
+        if ($page->find('css', "{$region} button[data-action=\"open-addingcontent\"]")) {
+            $this->execute('behat_general::i_click_on', [
+                "{$region} button[data-action=\"open-addingcontent\"]",
+                'css_element',
+            ]);
+            $chooserselector = "{$region} .dropdown-menu.show button[data-action=\"open-chooser\"]";
+        } else {
+            $chooserselector = "{$region} button[data-action=\"open-chooser\"]";
+        }
+        $this->execute('behat_general::i_click_on', [$chooserselector, 'css_element']);
 
         $node = $this->get_selected_node('xpath_element', '//div[@data-region="modules"]');
         $this->ensure_node_is_visible($node);
@@ -2242,6 +2252,54 @@ class behat_course extends behat_base {
     }
 
     /**
+     * Drops an image file onto a course section, triggering the drag-and-drop upload handler flow.
+     *
+     * A browser will not let a script synthesise a real file drop for security reasons, so this drives
+     * the same public course editor entry point (uploadFiles) that the drop handler uses, with a PNG of
+     * the given size generated in the browser. This exercises the handler chooser and, for the "Add media
+     * to course page" shortcut, the image-details modal, exactly as a real drop would.
+     *
+     * @Given /^I drop the image "([^"]*)" sized "(\d+)"x"(\d+)" onto course section "(\d+)"$/
+     * @param string $filename the file name to give the dropped image
+     * @param int $width the pixel width of the generated image
+     * @param int $height the pixel height of the generated image
+     * @param int $sectionnumber the target section number
+     */
+    public function i_drop_the_image_onto_course_section(string $filename, int $width, int $height, int $sectionnumber): void {
+        $this->require_javascript();
+        $filename = clean_param($filename, PARAM_FILE);
+        $encodedfilename = json_encode($filename);
+        $js = <<<JS
+            (function() {
+                const selector = '[data-for="section"][data-number="{$sectionnumber}"]';
+                const section = document.querySelector(selector);
+                if (!section) {
+                    throw new Error('Course section {$sectionnumber} not found');
+                }
+                const sectionId = section.getAttribute('data-id');
+                require(['core_courseformat/courseeditor'], function(editor) {
+                    const courseEditor = editor.getCurrentCourseEditor();
+                    const canvas = document.createElement('canvas');
+                    canvas.width = {$width};
+                    canvas.height = {$height};
+                    const context = canvas.getContext('2d');
+                    context.fillStyle = '#3366cc';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    const binary = atob(canvas.toDataURL('image/png').split(',')[1]);
+                    let length = binary.length;
+                    const bytes = new Uint8Array(length);
+                    while (length--) {
+                        bytes[length] = binary.charCodeAt(length);
+                    }
+                    const file = new File([bytes], {$encodedfilename}, {type: 'image/png'});
+                    courseEditor.uploadFiles(sectionId, {$sectionnumber}, [file]);
+                });
+            })();
+JS;
+        $this->execute_script($js);
+    }
+
+    /**
      * Get the section id from an identifier.
      *
      * The section name and summary are checked.
@@ -2282,5 +2340,65 @@ class behat_course extends behat_base {
         }
         $courseformat = course_get_format($courseid);
         return $courseformat->get_section($sectionnum);
+    }
+
+    /**
+     * Maps learning outcomes to activities using outcome shortname and activity idnumber.
+     *
+     * This bypasses editing forms and applies the same post-actions used when saving module settings.
+     *
+     * @Given I map the following outcomes to activities:
+     * @param TableNode $table Table with 'outcome' and 'activity idnumber' columns.
+     */
+    public function i_map_the_following_outcomes_to_activities(TableNode $table): void {
+        foreach ($table->getHash() as $row) {
+            $this->map_outcome_to_activity_idnumber($row['outcome'], $row['activity idnumber']);
+        }
+    }
+
+    /**
+     * Maps a learning outcome to an activity using shortname and activity idnumber.
+     *
+     * @param string $outcomeshortname The outcome shortname.
+     * @param string $activityidnumber The course module idnumber.
+     */
+    protected function map_outcome_to_activity_idnumber(string $outcomeshortname, string $activityidnumber): void {
+        global $CFG, $DB;
+
+        require_once($CFG->dirroot . '/course/modlib.php');
+
+        $cm = $DB->get_record_sql(
+            "SELECT cm.id, cm.idnumber, cm.course, cm.instance, m.name AS modulename
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module
+              WHERE cm.idnumber = ?",
+            [$activityidnumber],
+            MUST_EXIST
+        );
+
+        $outcomes = $DB->get_records_select(
+            'grade_outcomes',
+            'shortname = ? AND (courseid = ? OR courseid IS NULL)',
+            [$outcomeshortname, $cm->course],
+            'courseid DESC, id ASC'
+        );
+        if (empty($outcomes)) {
+            throw new \Exception(
+                "Could not find outcome with shortname '{$outcomeshortname}' in course {$cm->course} or site-wide outcomes."
+            );
+        }
+        $outcome = reset($outcomes);
+
+        $course = get_course($cm->course);
+        $moduleinfo = (object) [
+            'coursemodule' => $cm->id,
+            'cmidnumber' => $cm->idnumber,
+            'instance' => $cm->instance,
+            'modulename' => $cm->modulename,
+        ];
+        $fieldname = 'outcome_' . $outcome->id;
+        $moduleinfo->{$fieldname} = 1;
+
+        edit_module_post_actions($moduleinfo, $course);
     }
 }

@@ -24,6 +24,8 @@ use core_external\external_api;
  * @copyright  2012 Jerome Mouneyrac
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_course_contents')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\core_course_external::class, 'get_courses_by_field')]
 final class externallib_test extends \core_external\tests\externallib_testcase {
     /**
      * Tests set up
@@ -54,7 +56,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         $category2->name = 'Root Test Category 2';
         $category2->idnumber = 'rootcattest2';
         $category2->desc = 'Description for root test category 1';
-        $category2->theme = 'classic';
+        $category2->theme = 'boost';
         $categories = array(
             array('name' => $category1->name, 'parent' => 0),
             array('name' => $category2->name, 'parent' => 0, 'idnumber' => $category2->idnumber,
@@ -478,7 +480,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         $course2['enablecompletion'] = 1;
         $course2['completionnotify'] = 1;
         $course2['lang'] = 'en';
-        $course2['forcetheme'] = 'classic';
+        $course2['forcetheme'] = 'boost';
         $course2['courseformatoptions'][] = array('name' => 'automaticenddate', 'value' => 0);
         $course3['fullname'] = 'Test course 3';
         $course3['shortname'] = 'Testcourse3';
@@ -618,9 +620,8 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
      *
      * @param array $course
      * @param string $expectedemptyfield
-     *
-     * @dataProvider course_empty_field_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('course_empty_field_provider')]
     public function test_create_courses_empty_field(array $course, string $expectedemptyfield): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -638,9 +639,8 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
      *
      * @param array $course
      * @param string $expectedemptyfield
-     *
-     * @dataProvider course_empty_field_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('course_empty_field_provider')]
     public function test_update_courses_empty_field(array $course, string $expectedemptyfield): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -808,10 +808,10 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
             $this->assertEquals($course['forcetheme'], $dbcourse->theme);
             $this->assertEquals($course['enablecompletion'], $dbcourse->enablecompletion);
             if ($dbcourse->format === 'topics') {
-                $this->assertEquals($course['courseformatoptions'], array(
-                    array('name' => 'hiddensections', 'value' => $dbcourse->hiddensections),
-                    array('name' => 'coursedisplay', 'value' => $dbcourse->coursedisplay),
-                ));
+                $this->assertEquals($course['courseformatoptions'], [
+                    ['name' => 'hiddensections', 'value' => $dbcourse->hiddensections],
+                    ['name' => 'coursedisplay', 'value' => $dbcourse->coursedisplay],
+                ]);
             }
 
             // Assert custom field that we previously added to test course 4.
@@ -1177,7 +1177,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
      * Test get_course_contents
      */
     public function test_get_course_contents(): void {
-        global $CFG;
+        global $CFG, $DB;
         $this->resetAfterTest(true);
 
         $CFG->forum_allowforcedreadtracking = 1;
@@ -1191,10 +1191,10 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
             'showdate' => 1,
         ];
         $resource = self::getDataGenerator()->create_module('resource', $record);
-        $h5pactivity = self::getDataGenerator()->create_module('h5pactivity', ['course' => $course]);
 
         // We first run the test as admin.
         $this->setAdminUser();
+        $h5pactivity = self::getDataGenerator()->create_module('h5pactivity', ['course' => $course, 'lang' => 'en']);
         $sections = core_course_external::get_course_contents($course->id, array());
         // We need to execute the return values cleaning process to simulate the web service server.
         $sections = external_api::clean_returnvalue(core_course_external::get_course_contents_returns(), $sections);
@@ -1287,6 +1287,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
                     ), $module['purpose']
                 );
                 $this->assertTrue($module['branded']);
+                $this->assertEquals('en', $module['lang']);
                 $testexecuted = $testexecuted + 1;
             }
         }
@@ -1679,6 +1680,36 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
     }
 
     /**
+     * Test activitybadge is only returned for modules whose badge has content.
+     */
+    public function test_get_course_contents_activitybadge(): void {
+        $this->resetAfterTest(true);
+
+        $this->setAdminUser();
+        $course = self::getDataGenerator()->create_course();
+        $generator = self::getDataGenerator();
+
+        // Forum and File both have an activity badge class, but these have no badge content.
+        $forum = $generator->create_module('forum', ['course' => $course->id, 'name' => 'Forum without unread posts']);
+        $filenotype = $generator->create_module('resource', ['course' => $course->id, 'showtype' => 0]);
+        // This File shows its type, so its badge has content.
+        $filetype = $generator->create_module('resource', ['course' => $course->id, 'showtype' => 1]);
+        // Page has no activity badge class.
+        $page = $generator->create_module('page', ['course' => $course->id]);
+
+        $result = core_course_external::get_course_contents($course->id);
+        $result = external_api::clean_returnvalue(core_course_external::get_course_contents_returns(), $result);
+        $modules = array_column($result[0]['modules'], null, 'id');
+        $this->assertCount(4, $modules);
+
+        $this->assertArrayNotHasKey('activitybadge', $modules[$forum->cmid]);
+        $this->assertArrayNotHasKey('activitybadge', $modules[$filenotype->cmid]);
+        $this->assertArrayNotHasKey('activitybadge', $modules[$page->cmid]);
+        $this->assertEquals('TXT', $modules[$filetype->cmid]['activitybadge']['badgecontent']);
+        $this->assertEquals('badge-none', $modules[$filetype->cmid]['activitybadge']['badgestyle']);
+    }
+
+    /**
      * Test contents info is returned.
      */
     public function test_get_course_contents_contentsinfo(): void {
@@ -1881,8 +1912,6 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test get_course_contents for courses with sub-sections.
-     *
-     * @covers ::get_course_contents
      */
     public function test_get_course_contents_subsections(): void {
         global $DB, $PAGE;
@@ -2052,7 +2081,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         $course2['defaultgroupingid'] = 0;
         $course2['enablecompletion'] = 1;
         $course2['lang'] = 'en';
-        $course2['forcetheme'] = 'classic';
+        $course2['forcetheme'] = 'boost';
 
         $course3['id'] = $originalcourse3->id;
         $course3['customfields'] = [
@@ -2635,6 +2664,8 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         );
         // Hidden activity.
         $assign = self::getDataGenerator()->create_module('assign', $record, $options);
+        $cm = get_coursemodule_from_id('assign', $assign->cmid, 0, false, MUST_EXIST);
+        $section = $DB->get_record('course_sections', ['id' => $cm->section], 'id,section', MUST_EXIST);
 
         $outcomescale = 'Distinction, Very Good, Good, Pass, Fail';
 
@@ -2688,7 +2719,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
 
         $this->assertCount(0, $result['warnings']);
         // Test we retrieve all the fields.
-        $this->assertCount(30, $result['cm']);
+        $this->assertCount(37, $result['cm']);
         $this->assertEquals($record['name'], $result['cm']['name']);
         $this->assertEquals($options['idnumber'], $result['cm']['idnumber']);
         $this->assertEquals(100, $result['cm']['grade']);
@@ -2697,6 +2728,13 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         $this->assertEmpty($result['cm']['advancedgrading'][0]['method']);
         $this->assertEquals($outcomescale, $result['cm']['outcomes'][0]['scale']);
         $this->assertEquals(DOWNLOAD_COURSE_CONTENT_ENABLED, $result['cm']['downloadcontent']);
+        $this->assertArrayHasKey('coursemodule', $result['cm']);
+        $this->assertEquals($assign->cmid, $result['cm']['coursemodule']);
+        $this->assertArrayHasKey('course', $result['cm']);
+        $this->assertEquals($course->id, $result['cm']['course']);
+        $this->assertArrayHasKey('lang', $result['cm']);
+        $this->assertEquals($cm->section, $result['cm']['section']);
+        $this->assertEquals($section->section, $result['cm']['sectionnum']);
 
         $student = $this->getDataGenerator()->create_user();
         $studentrole = $DB->get_record('role', array('shortname' => 'student'));
@@ -2721,11 +2759,13 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
 
         $this->assertCount(0, $result['warnings']);
         // Test we retrieve only the few files we can see.
-        $this->assertCount(12, $result['cm']);
+        $this->assertCount(17, $result['cm']);
         $this->assertEquals($assign->cmid, $result['cm']['id']);
         $this->assertEquals($course->id, $result['cm']['course']);
         $this->assertEquals('assign', $result['cm']['modname']);
         $this->assertEquals($assign->id, $result['cm']['instance']);
+        $this->assertEquals($cm->section, $result['cm']['section']);
+        $this->assertEquals($section->section, $result['cm']['sectionnum']);
 
     }
 
@@ -2757,7 +2797,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
 
         $this->assertCount(0, $result['warnings']);
         // Test we retrieve all the fields.
-        $this->assertCount(28, $result['cm']);
+        $this->assertCount(35, $result['cm']);
         $this->assertEquals($record['name'], $result['cm']['name']);
         $this->assertEquals($record['grade'], $result['cm']['grade']);
         $this->assertEquals($options['idnumber'], $result['cm']['idnumber']);
@@ -2786,7 +2826,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
 
         $this->assertCount(0, $result['warnings']);
         // Test we retrieve only the few files we can see.
-        $this->assertCount(12, $result['cm']);
+        $this->assertCount(17, $result['cm']);
         $this->assertEquals($quiz->cmid, $result['cm']['id']);
         $this->assertEquals($course->id, $result['cm']['course']);
         $this->assertEquals('quiz', $result['cm']['modname']);
@@ -2831,7 +2871,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
             foreach ($course['options'] as $option) {
                 $navoptions->{$option['name']} = $option['available'];
             }
-            $this->assertCount(10, $course['options']);
+            $this->assertCount(11, $course['options']);
             if ($course['id'] == SITEID) {
                 $this->assertTrue($navoptions->blogs);
                 $this->assertFalse($navoptions->notes);
@@ -2843,6 +2883,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
                 $this->assertTrue($navoptions->competencies);
                 $this->assertFalse($navoptions->communication);
                 $this->assertFalse($navoptions->overview);
+                $this->assertFalse($navoptions->learningoutcomes);
             } else {
                 $this->assertTrue($navoptions->blogs);
                 $this->assertFalse($navoptions->notes);
@@ -2854,6 +2895,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
                 $this->assertTrue($navoptions->competencies);
                 $this->assertFalse($navoptions->communication);
                 $this->assertTrue($navoptions->overview);
+                $this->assertFalse($navoptions->learningoutcomes);
             }
         }
     }
@@ -3209,7 +3251,6 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test retrieving courses by field returning communication tools.
-     * @covers \core_course_external::get_courses_by_field
      */
     public function test_get_courses_by_field_communication(): void {
         $this->resetAfterTest();
@@ -3803,7 +3844,6 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
     /**
      * Test the get_enrolled_courses_by_timeline_classification function.
      *
-     * @dataProvider get_get_enrolled_courses_by_timeline_classification_test_cases
      * @param array $coursedata Courses to create
      * @param string $classification Timeline classification
      * @param int $limit Maximum number of results
@@ -3814,6 +3854,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
      * @param string|null $expectedexception Expected exception string
      * @param string|null $searchvalue If we are searching, what do we need to look for?
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('get_get_enrolled_courses_by_timeline_classification_test_cases')]
     public function test_get_enrolled_courses_by_timeline_classification(
         $coursedata,
         $classification,

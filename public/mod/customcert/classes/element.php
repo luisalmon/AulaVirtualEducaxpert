@@ -18,7 +18,7 @@
  * The base class for the customcert elements.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -28,20 +28,17 @@ namespace mod_customcert;
 
 use coding_exception;
 use InvalidArgumentException;
-use mod_customcert\element\element_interface;
 use mod_customcert\element\layout_element_interface;
-use mod_customcert\element\legacy_element_adapter;
 use mod_customcert\element\form_element_interface;
+use mod_customcert\element\persistable_element_interface;
+use mod_customcert\element\raw_data_element_interface;
 use mod_customcert\element\renderable_element_interface;
 use mod_customcert\element\stylable_element_interface;
-use mod_customcert\event\element_created;
-use mod_customcert\event\element_updated;
-use mod_customcert\service\element_renderer;
 use mod_customcert\service\element_factory;
+use mod_customcert\service\element_layout;
 use mod_customcert\service\element_repository;
 use mod_customcert\service\persistence_helper;
 use MoodleQuickForm;
-use pdf;
 use stdClass;
 
 /**
@@ -50,14 +47,22 @@ use stdClass;
  * All customcert element plugins are based on this class.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 abstract class element implements
     form_element_interface,
     layout_element_interface,
-    renderable_element_interface,
+    raw_data_element_interface,
     stylable_element_interface {
+    /*
+     * Note: this base class intentionally does NOT implement renderable_element_interface.
+     * Native v2 elements implement that interface themselves with the strict typed
+     * render()/render_html() contract. Genuine Moodle 4.5-era third-party elements
+     * declare untyped historical render() signatures; keeping the strict abstract
+     * methods on this base would make those subclasses unloadable (PHP fatal).
+     * The factory wraps non-renderable legacy instances with legacy_element_adapter.
+     */
     /**
      * @var string The left alignment constant.
      */
@@ -109,11 +114,6 @@ abstract class element implements
     protected ?int $refpoint;
 
     /**
-     * @var string The element type (plugin name, e.g. 'text', 'code').
-     */
-    private string $customcertelementtype;
-
-    /**
      * @var string The alignment.
      */
     protected string $alignment;
@@ -129,6 +129,56 @@ abstract class element implements
     private ?edit_element_form $editelementform = null;
 
     /**
+     * @var int Count of definition_after_data() deprecation notices emitted so far. Lets
+     *     legacy_element_adapter detect, via the change in this count, whether a legacy
+     *     override's call to parent::definition_after_data() already emitted the notice.
+     */
+    private int $definitionafterdatawarnings = 0;
+
+    /**
+     * Clone of the raw element DB record for legacy property access.
+     *
+     * Historical (Moodle 4.5-era) elements often read `$this->element->...` directly.
+     *
+     * @var stdClass
+     * @deprecated since Moodle 5.2 - Use the typed getters instead.
+     */
+    protected $element;
+
+    /**
+     * Legacy font name property.
+     *
+     * @var string|null
+     * @deprecated since Moodle 5.2 - Use get_font() instead. Backed by JSON data.
+     */
+    protected $font;
+
+    /**
+     * Legacy font size property.
+     *
+     * @var int|string|null
+     * @deprecated since Moodle 5.2 - Use get_fontsize() instead. Backed by JSON data.
+     */
+    protected $fontsize;
+
+    /**
+     * Legacy colour property.
+     *
+     * @var string|null
+     * @deprecated since Moodle 5.2 - Use get_colour() instead. Backed by JSON data.
+     */
+    protected $colour;
+
+    /**
+     * Legacy width property.
+     *
+     * @var int|string|null
+     * @deprecated since Moodle 5.2 - Use get_width() instead. Backed by JSON data.
+     */
+    protected $width;
+
+
+    /**
      * Constructor.
      *
      * @param stdClass $element the element data
@@ -136,30 +186,25 @@ abstract class element implements
     public function __construct(stdClass $element) {
         $showposxy = get_config('customcert', 'showposxy');
 
-        // Normalise types defensively — DB/fixtures may provide strings for numeric fields.
-        // Helper: return null if unset or empty string, otherwise cast.
+        // DB rows and fixtures may supply numeric fields as strings; empty values stay null.
         $optional = static function ($value, callable $cast) {
             return (isset($value) && $value !== '') ? $cast($value) : null;
         };
 
-        // Required scalars.
         $this->id = isset($element->id) ? (int) $element->id : 0;
         $this->pageid = isset($element->pageid) ? (int) $element->pageid : 0;
         $this->name = isset($element->name) ? (string) $element->name : '';
 
-        // Element type (plugin name).
-        $this->customcertelementtype = isset($element->element) ? (string) $element->element : '';
-
-        // Mixed data payload.
         $this->data = $element->data ?? null;
-
-        // Optional fields (preserve NULL when unset or empty string).
         $this->posx = $optional($element->posx ?? null, 'intval');
         $this->posy = $optional($element->posy ?? null, 'intval');
         $this->refpoint = $optional($element->refpoint ?? null, 'intval');
 
         $this->showposxy = (bool) ($showposxy ?? false);
         $this->set_alignment($element->alignment ?? self::ALIGN_LEFT);
+
+        // One compatibility path for historical protected state (4.5-era plugins).
+        $this->initialise_legacy_state($element);
     }
 
     /**
@@ -183,7 +228,7 @@ abstract class element implements
     /**
      * Returns the name.
      *
-     * @return int
+     * @return string
      */
     public function get_name(): string {
         return $this->name;
@@ -192,14 +237,8 @@ abstract class element implements
     /**
      * Returns the data.
      *
-     * For legacy backwards-compatibility: if the stored data is a generic migration wrapper
-     * (a JSON object with a 'value' key and only migration visual/layout metadata keys),
-     * AND the element type is not a known bundled element type, this method unwraps and
-     * returns the scalar value directly so that legacy third-party elements extending this
-     * class continue to receive the original scalar they stored.
-     *
-     * Bundled element types always receive the raw stored data, even if the JSON object
-     * contains a 'value' key, because their save/load code expects the full JSON payload.
+     * Legacy scalar-compatibility elements receive the unwrapped scalar when the stored
+     * data is a generic migration wrapper; current elements always receive the raw JSON.
      *
      * @return mixed
      */
@@ -216,18 +255,27 @@ abstract class element implements
     }
 
     /**
-     * Return true if this element instance should unwrap a generic migration wrapper in get_data().
+     * Return the unmodified element data intended for persistence.
      *
-     * Unwrapping is only applied to unknown/third-party element types. Bundled element types
-     * use structured JSON payloads and must not be unwrapped.
+     * Unlike {@see get_data()}, this never unwraps a generic migration wrapper, so migrated
+     * fields (font, fontsize, colour, width, height, alphachannel) that the legacy scalar view
+     * hides are preserved. For the persistence layer (e.g. element_repository) only; rendering
+     * and form code should use get_data().
+     *
+     * @return mixed
+     */
+    public function get_raw_data(): mixed {
+        return $this->data;
+    }
+
+    /**
+     * Whether this instance needs the historical scalar compatibility view.
      *
      * @return bool
      */
     private function should_unwrap_generic_migration_wrapper(): bool {
-        if ($this->customcertelementtype === '') {
-            return false;
-        }
-        return !in_array($this->customcertelementtype, self::BUNDLED_ELEMENT_TYPES, true);
+        return !($this instanceof persistable_element_interface)
+            && !($this instanceof renderable_element_interface);
     }
 
     /**
@@ -240,43 +288,11 @@ abstract class element implements
     private const MIGRATION_VISUAL_KEYS = ['width', 'height', 'font', 'fontsize', 'colour', 'alphachannel'];
 
     /**
-     * Bundled/core customcert element types that use structured JSON payloads.
-     * These element types must never have their data unwrapped by get_data(),
-     * even if the JSON object looks like a generic migration wrapper.
-     *
-     * @var string[]
-     */
-    private const BUNDLED_ELEMENT_TYPES = [
-        'bgimage',
-        'border',
-        'categoryname',
-        'code',
-        'coursefield',
-        'coursename',
-        'date',
-        'digitalsignature',
-        'expiry',
-        'grade',
-        'gradeitemname',
-        'image',
-        'qrcode',
-        'studentname',
-        'teachername',
-        'text',
-        'userfield',
-        'userpicture',
-    ];
-
-    /**
      * Return true if the given JSON string is a generic migration scalar wrapper.
      *
-     * A generic migration wrapper is a JSON object that:
-     *  - Has a 'value' key.
-     *  - Has no keys other than 'value' and the known migration visual/layout metadata keys
-     *    (width, height, font, fontsize, colour, alphachannel).
-     *
-     * This is used by get_data() to provide backwards-compatibility for legacy third-party
-     * elements that call get_data() and expect the original scalar value.
+     * That is a JSON object with a 'value' key and no keys other than 'value' and
+     * MIGRATION_VISUAL_KEYS. get_data() uses it to give legacy third-party elements the
+     * original scalar value.
      *
      * @param string $data The raw JSON string from the data column.
      * @return bool
@@ -331,10 +347,7 @@ abstract class element implements
     }
 
     /**
-     * Return the decoded JSON payload stored in 'data' or an empty array when not valid JSON.
-     *
-     * This helper is intended for element implementations that store structured data
-     * in the JSON 'data' column. It never throws; invalid or non-JSON values produce [].
+     * Return the decoded JSON array, or [] for invalid or non-array JSON.
      *
      * @return array<string,mixed>
      */
@@ -398,7 +411,7 @@ abstract class element implements
     /**
      * Returns the refpoint.
      *
-     * @return int
+     * @return int|null
      */
     public function get_refpoint(): ?int {
         return $this->refpoint ?? null;
@@ -407,7 +420,7 @@ abstract class element implements
     /**
      * Returns the alignment.
      *
-     * @return string The current alignment value.
+     * @return string|null
      */
     public function get_alignment(): ?string {
         return $this->alignment ?? self::ALIGN_LEFT;
@@ -474,224 +487,6 @@ abstract class element implements
         return null;
     }
 
-
-    /**
-     * Renders common form elements (font, colour, position, width, refpoint, alignment).
-     *
-     * @deprecated since Moodle 5.2
-     * @param MoodleQuickForm $mform the edit_form instance.
-     */
-    public function build_form(\MoodleQuickForm $mform): void {
-        $this->render_form_elements($mform);
-    }
-
-    /**
-     * Renders common form elements (font, colour, position, width, refpoint, alignment).
-     *
-     * @deprecated since Moodle 5.2
-     * @param MoodleQuickForm $mform the edit_form instance.
-     */
-    public function render_form_elements($mform) {
-        debugging(
-            'render_form_elements() is deprecated since Moodle 5.2. '
-            . 'Use element_helper::render_common_form_elements() instead.',
-            DEBUG_DEVELOPER
-        );
-        // Render the common elements.
-        element_helper::render_form_element_font($mform);
-        element_helper::render_form_element_colour($mform);
-        if ($this->showposxy) {
-            element_helper::render_form_element_position($mform);
-        }
-        element_helper::render_form_element_width($mform);
-        element_helper::render_form_element_refpoint($mform);
-        element_helper::render_form_element_alignment($mform);
-    }
-
-    /**
-     * Sets the data on the form when editing an element.
-     * Can be overridden if more functionality is needed.
-     *
-     * @param MoodleQuickForm $mform the edit_form instance
-     * @deprecated since Moodle 5.2
-     */
-    public function definition_after_data($mform) {
-        debugging(
-            'definition_after_data() is deprecated since Moodle 5.2. '
-            . 'Implement mod_customcert\\element\\preparable_form_interface::prepare_form() instead.',
-            DEBUG_DEVELOPER
-        );
-        // Loop through the properties of the element and set the values
-        // of the corresponding form element, if it exists.
-        $properties = [
-            'name' => $this->name,
-            'font' => $this->get_font(),
-            'fontsize' => $this->get_fontsize(),
-            'colour' => $this->get_colour(),
-            'posx' => $this->posx,
-            'posy' => $this->posy,
-            'width' => $this->get_width(),
-            'refpoint' => $this->refpoint,
-            'alignment' => $this->get_alignment(),
-        ];
-        foreach ($properties as $property => $value) {
-            if (!is_null($value) && $mform->elementExists($property)) {
-                $element = $mform->getElement($property);
-                $element->setValue($value);
-            }
-        }
-    }
-
-    /**
-     * Performs validation on the element values.
-     * Can be overridden if more functionality is needed.
-     *
-     * @param array $data the submitted data
-     * @param array $files the submitted files
-     * @return array the validation errors
-     * @deprecated since Moodle 5.2
-     */
-    public function validate_form_elements($data, $files) {
-        debugging(
-            'validate_form_elements() is deprecated since Moodle 5.2. '
-            . 'Implement mod_customcert\\element\\validatable_element_interface::validate() instead.',
-            DEBUG_DEVELOPER
-        );
-        // Array to return the errors.
-        $errors = [];
-
-        // Common validation methods.
-        $errors += element_helper::validate_form_element_colour($data);
-        if ($this->showposxy) {
-            $errors += element_helper::validate_form_element_position($data);
-        }
-        $errors += element_helper::validate_form_element_width($data);
-
-        return $errors;
-    }
-
-    /**
-     * Handles saving the form elements created by this element.
-     * Can be overridden if more functionality is needed.
-     *
-     * @param stdClass $data the form data
-     * @return int|bool true if updated was a success, id of the new element otherwise.
-     * @deprecated since Moodle 5.2
-     */
-    public function save_form_elements($data) {
-        debugging(
-            'save_form_elements() is deprecated since Moodle 5.2. '
-            . 'Implement mod_customcert\\element\\persistable_element_interface::normalise_data() and '
-            . 'use element_repository for persistence.',
-            DEBUG_DEVELOPER
-        );
-        global $DB;
-
-        // Get the data from the form.
-        $element = new stdClass();
-        $element->name = $data->name;
-        // Persist element data as JSON using a single helper policy.
-        $element->data = persistence_helper::to_json_data($this, $data);
-        // Visual attributes are stored within JSON 'data', not as separate columns.
-        if ($this->showposxy) {
-            $element->posx = $data->posx ?? null;
-            $element->posy = $data->posy ?? null;
-        }
-        // Merge width into JSON data rather than a (now removed) DB column.
-        if (isset($data->width) && $data->width !== '') {
-            $current = $element->data;
-            $merged = null;
-            if ($current === null || $current === '') {
-                $merged = json_encode(['width' => (int)$data->width]);
-            } else {
-                $decoded = json_decode($current, true);
-                if (is_array($decoded)) {
-                    $decoded['width'] = (int)$data->width;
-                    $merged = json_encode($decoded);
-                } else {
-                    $merged = json_encode(['width' => (int)$data->width]);
-                }
-            }
-            $element->data = $merged;
-        }
-        $element->refpoint = $data->refpoint ?? null;
-        $element->alignment = $data->alignment ?? self::ALIGN_LEFT;
-        $element->timemodified = time();
-
-        // Check if we are updating, or inserting a new element.
-        if (!empty($this->id)) { // Must be updating a record in the database.
-            $element->id = $this->id;
-            $return = $DB->update_record('customcert_elements', $element);
-
-            $target = ($this instanceof element_interface) ? $this : new legacy_element_adapter($this);
-            element_updated::create_from_element($target)->trigger();
-
-            return $return;
-        } else { // Must be adding a new one.
-            $element->element = $data->element;
-            $element->pageid = $data->pageid;
-            $element->sequence = element_helper::get_element_sequence($element->pageid);
-            $element->timecreated = time();
-            $element->id = $DB->insert_record('customcert_elements', $element, true);
-            $this->id = $element->id;
-
-            $target = ($this instanceof element_interface) ? $this : new legacy_element_adapter($this);
-            element_created::create_from_element($target)->trigger();
-
-            return $element->id;
-        }
-    }
-
-
-    /**
-     * Handles saving any element data introduced by this element.
-     * Can be overridden if more functionality is needed.
-     *
-     * @deprecated since Moodle 5.2 — implement persistable_element_interface::normalise_data() instead.
-     * @param stdClass $data the form data
-     * @return string the unique data to store
-     */
-    public function save_unique_data($data) {
-        debugging(
-            'save_unique_data() is deprecated since Moodle 5.2. '
-            . 'Implement mod_customcert\\element\\persistable_element_interface::normalise_data() instead.',
-            DEBUG_DEVELOPER
-        );
-        return '';
-    }
-
-    /**
-     * Handles any extra processing needed when an element is restored from a backup.
-     * Can be overridden if more functionality is needed.
-     *
-     * @deprecated since Moodle 5.2 — implement restorable_element_interface::after_restore_from_backup() instead.
-     * @param mixed $restore the restore task
-     */
-    public function after_restore($restore) {
-        debugging(
-            'after_restore() is deprecated since Moodle 5.2. '
-            . 'Implement mod_customcert\\element\\restorable_element_interface::after_restore_from_backup() instead.',
-            DEBUG_DEVELOPER
-        );
-    }
-
-    /**
-     * This handles copying data from another element of the same type.
-     * Can be overridden if more functionality is needed.
-     *
-     * @deprecated since Moodle 5.2 — implement mod_customcert\element\copyable_element_interface::copy_from() instead.
-     * @param mixed $data legacy form/element data
-     * @return bool returns true if the data was copied successfully, false otherwise
-     */
-    public function copy_element($data) {
-        debugging(
-            'element::copy_element() is deprecated since Moodle 5.2. '
-            . 'Implement mod_customcert\\element\\copyable_element_interface::copy_from() instead.',
-            DEBUG_DEVELOPER
-        );
-        return true;
-    }
-
     /**
      * This defines if an element plugin can be added to a certificate.
      * Can be overridden if an element plugin wants to take over the control.
@@ -700,49 +495,6 @@ abstract class element implements
      */
     public static function can_add(): bool {
         return true;
-    }
-
-    /**
-     * Handles rendering the element on the pdf.
-     *
-     * Must be overridden.
-     *
-     * @param pdf $pdf the pdf object
-     * @param bool $preview true if it is a preview, false otherwise
-     * @param stdClass $user the user we are rendering this for
-     * @param element_renderer|null $renderer the renderer service
-     */
-    abstract public function render(pdf $pdf, bool $preview, stdClass $user, ?element_renderer $renderer = null): void;
-
-    /**
-     * Render the element in html.
-     *
-     * Must be overridden.
-     *
-     * This function is used to render the element when we are using the
-     * drag and drop interface to position it.
-     *
-     * @param element_renderer|null $renderer the renderer service
-     * @return string the html
-     */
-    abstract public function render_html(?element_renderer $renderer = null): string;
-
-    /**
-     * Handles deleting any data this element may have introduced.
-     * Can be overridden if more functionality is needed.
-     *
-     * @deprecated since Moodle 5.2
-     * @return bool success return true if deletion success, false otherwise
-     */
-    public function delete() {
-        debugging(
-            'element::delete() is deprecated since Moodle 5.2. Use element_repository::delete() instead.',
-            DEBUG_DEVELOPER
-        );
-
-        $repository = new element_repository(element_factory::build_with_defaults());
-        $target = ($this instanceof element_interface) ? $this : new legacy_element_adapter($this);
-        return $repository->delete($target);
     }
 
 
@@ -776,5 +528,253 @@ abstract class element implements
      */
     public function has_save_and_continue(): bool {
         return false;
+    }
+
+    /**
+     * Initialise historical protected state used by Moodle 4.5-era element plugins.
+     *
+     * Translates the current record (and JSON data column when style fields have migrated)
+     * into the legacy `$element` record view plus `$font`/`$fontsize`/`$colour`/`$width`.
+     *
+     * @param stdClass $element Raw element record
+     * @return void
+     */
+    protected function initialise_legacy_state(stdClass $element): void {
+        // Keeping this for legacy reasons so we do not break third-party elements.
+        $this->element = clone($element);
+
+        // Mirror the get_data() migration-wrapper unwrapping onto the legacy record view, so
+        // legacy third-party code that reads $this->element->data directly sees the same
+        // historical scalar as get_data() rather than the migrated JSON wrapper.
+        if (isset($this->element->data) && is_string($this->element->data)) {
+            $this->element->data = $this->get_data();
+        }
+
+        // Prefer explicit record fields (genuine 4.5 DB shape), else JSON-backed getters.
+        $this->font = isset($element->font) && $element->font !== ''
+            ? (string) $element->font
+            : $this->get_font();
+        $this->fontsize = isset($element->fontsize) && $element->fontsize !== ''
+            ? $element->fontsize
+            : $this->get_fontsize();
+        $this->colour = isset($element->colour) && $element->colour !== ''
+            ? (string) $element->colour
+            : $this->get_colour();
+        $this->width = isset($element->width) && $element->width !== ''
+            ? $element->width
+            : $this->get_width();
+
+        // Mirror resolved values onto the legacy record view when missing.
+        if (!isset($this->element->font)) {
+            $this->element->font = $this->font;
+        }
+        if (!isset($this->element->fontsize)) {
+            $this->element->fontsize = $this->fontsize;
+        }
+        if (!isset($this->element->colour)) {
+            $this->element->colour = $this->colour;
+        }
+        if (!isset($this->element->width)) {
+            $this->element->width = $this->width;
+        }
+    }
+
+    /**
+     * Add fields to the edit form (v2 form_element_interface entry point).
+     *
+     * Bridges to the historical render_form_elements() hook for legacy plugins.
+     *
+     * @param MoodleQuickForm $mform the edit_form instance.
+     */
+    public function build_form(MoodleQuickForm $mform): void {
+        $this->render_form_elements($mform);
+    }
+
+    /**
+     * Renders common form elements (font, colour, position, width, refpoint, alignment).
+     *
+     * @deprecated since Moodle 5.2
+     * @param MoodleQuickForm $mform the edit_form instance.
+     */
+    public function render_form_elements($mform) {
+        debugging(
+            'render_form_elements() is deprecated since Moodle 5.2. '
+            . 'Use element_helper::render_common_form_elements() instead.',
+            DEBUG_DEVELOPER
+        );
+        element_helper::render_form_element_font($mform);
+        element_helper::render_form_element_colour($mform);
+        if ($this->showposxy) {
+            element_helper::render_form_element_position($mform);
+        }
+        element_helper::render_form_element_width($mform);
+        element_helper::render_form_element_refpoint($mform);
+        element_helper::render_form_element_alignment($mform);
+    }
+
+    /**
+     * Sets the data on the form when editing an element.
+     * Can be overridden if more functionality is needed.
+     *
+     * @param MoodleQuickForm $mform the edit_form instance
+     * @deprecated since Moodle 5.2
+     */
+    public function definition_after_data($mform) {
+        $this->definitionafterdatawarnings++;
+        debugging(
+            'definition_after_data() is deprecated since Moodle 5.2. '
+            . 'Implement mod_customcert\\element\\preparable_form_interface::prepare_form() instead.',
+            DEBUG_DEVELOPER
+        );
+        $properties = [
+            'name' => $this->name,
+            'font' => $this->get_font(),
+            'fontsize' => $this->get_fontsize(),
+            'colour' => $this->get_colour(),
+            'posx' => $this->posx,
+            'posy' => $this->posy,
+            'width' => $this->get_width(),
+            'refpoint' => $this->refpoint,
+            'alignment' => $this->get_alignment(),
+        ];
+        foreach ($properties as $property => $value) {
+            if (!is_null($value) && $mform->elementExists($property)) {
+                $element = $mform->getElement($property);
+                $element->setValue($value);
+            }
+        }
+    }
+
+    /**
+     * Count of definition_after_data() deprecation notices emitted so far on this instance.
+     *
+     * @return int
+     */
+    public function get_definition_after_data_warning_count(): int {
+        return $this->definitionafterdatawarnings;
+    }
+
+    /**
+     * Performs validation on the element values.
+     * Can be overridden if more functionality is needed.
+     *
+     * @param array $data the form data
+     * @param array $files the form files
+     * @return array any errors from validation
+     * @deprecated since Moodle 5.2
+     */
+    public function validate_form_elements($data, $files) {
+        $errors = [];
+        $errors += element_helper::validate_form_element_colour($data);
+        if ($this->showposxy) {
+            $errors += element_helper::validate_form_element_position($data);
+        }
+        $errors += element_helper::validate_form_element_width($data);
+        return $errors;
+    }
+
+    /**
+     * This will handle saving data that has been entered into the form.
+     * Can be overridden if more functionality is needed.
+     *
+     * @param stdClass $data the form data
+     * @return string the unique data to store
+     * @deprecated since Moodle 5.2
+     */
+    public function save_unique_data($data) {
+        return '';
+    }
+
+    /**
+     * Handles any extra processing needed when an element is restored from a backup.
+     * Can be overridden if more functionality is needed.
+     *
+     * @deprecated since Moodle 5.2 — implement restorable_element_interface::after_restore_from_backup() instead.
+     * @param mixed $restore the restore task
+     */
+    public function after_restore($restore) {
+    }
+
+    /**
+     * Handles saving the form elements created by this element.
+     * Can be overridden if more functionality is needed.
+     *
+     * @param stdClass $data the form data
+     * @return int|bool true if updated was a success, id of the new element otherwise.
+     * @deprecated since Moodle 5.2
+     */
+    public function save_form_elements($data) {
+        debugging(
+            'save_form_elements() is deprecated since Moodle 5.2. '
+            . 'Implement mod_customcert\\element\\persistable_element_interface::normalise_data() and '
+            . 'use element_repository for persistence.',
+            DEBUG_DEVELOPER
+        );
+
+        $repository = new element_repository(element_factory::build_with_defaults());
+        $isupdate = !empty($this->id);
+
+        // Keep the existing element identity authoritative on update.
+        if (!$isupdate) {
+            $this->pageid = (int) $data->pageid;
+        }
+
+        $this->name = (string) $data->name;
+        // Preserve the raw-compatible persistence representation.
+        $this->data = persistence_helper::to_json_data($this, $data);
+
+        if ($this->showposxy) {
+            $this->posx = isset($data->posx) && $data->posx !== '' ? (int) $data->posx : null;
+            $this->posy = isset($data->posy) && $data->posy !== '' ? (int) $data->posy : null;
+        }
+        // Match the 5.2 defaults for omitted layout fields.
+        $this->refpoint = isset($data->refpoint) && $data->refpoint !== '' ? (int) $data->refpoint : null;
+        $this->alignment = isset($data->alignment) && $data->alignment !== '' ? (string) $data->alignment : self::ALIGN_LEFT;
+
+        $layout = new element_layout($this->posx, $this->posy, $this->refpoint, $this->alignment);
+
+        if ($isupdate) {
+            $repository->save($this, $layout);
+            return true;
+        }
+
+        $newid = $repository->create($this, $layout);
+        $this->id = $newid;
+
+        return $newid;
+    }
+
+    /**
+     * This handles copying data from another element of the same type.
+     * Can be overridden if more functionality is needed.
+     *
+     * @deprecated since Moodle 5.2 — implement mod_customcert\element\copyable_element_interface::copy_from() instead.
+     * @param mixed $data legacy form/element data
+     * @return bool returns true if the data was copied successfully, false otherwise
+     */
+    public function copy_element($data) {
+        debugging(
+            'element::copy_element() is deprecated since Moodle 5.2. '
+            . 'Implement mod_customcert\\element\\copyable_element_interface::copy_from() instead.',
+            DEBUG_DEVELOPER
+        );
+        return true;
+    }
+
+    /**
+     * Handles deleting any data this element may have introduced.
+     * Can be overridden if more functionality is needed.
+     *
+     * @deprecated since Moodle 5.2
+     * @return bool success return true if deletion success, false otherwise
+     */
+    public function delete() {
+        debugging(
+            'element::delete() is deprecated since Moodle 5.2. Use element_repository::delete() instead.',
+            DEBUG_DEVELOPER
+        );
+
+        $repository = new element_repository(element_factory::build_with_defaults());
+        return $repository->delete($this);
     }
 }

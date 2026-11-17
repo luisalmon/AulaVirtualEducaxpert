@@ -198,7 +198,7 @@ function theme_trema_get_pre_scss($theme) {
     $fields['showactivityicons'] = '.page-header-image,.activityiconcontainer.courseicon';
 
     // Login form.
-    $fields['loginshowloginform'] = '#login, .loginform .login-form, .login-form-forgotpassword form-group';
+    $fields['loginshowloginform'] = '#login, .loginform .login-form';
 
     // User menu - Hide the Logout link.
     $fields['showumlogoutlink'] = '#carousel-item-main a:last-of-type, #carousel-item-main .dropdown-divider:last-of-type';
@@ -299,8 +299,29 @@ function theme_trema_get_main_scss_content($theme) {
 
     $scss = '';
 
+    // Moodle 5.2+: Boost SCSS uses the Moodle Design System tokens, which must be imported before Bootstrap.
+    if (file_exists("$CFG->dirroot/theme/boost/scss/design-system.scss")) {
+        $scss .= '@import "design-system";' . "\n";
+    }
+
     $filename = !empty($theme->settings->preset) ? $theme->settings->preset : 'default.scss';
-    $scss .= file_get_contents("$CFG->dirroot/theme/trema/scss/preset/{$filename}");
+    $context = context_system::instance();
+    $fs = get_file_storage();
+    if (in_array($filename, ['default.scss', 'plain.scss'])) {
+        $scss .= file_get_contents("$CFG->dirroot/theme/trema/scss/preset/{$filename}");
+    } else if ($presetfile = $fs->get_file($context->id, 'theme_trema', 'preset', 0, '/', $filename)) {
+        $scss .= $presetfile->get_content();
+    } else {
+        // Safety fallback - the uploaded preset may have been deleted.
+        $scss .= file_get_contents("$CFG->dirroot/theme/trema/scss/preset/default.scss");
+    }
+
+    // Moodle 4.x (Bootstrap 4): add the Bootstrap 5 classes used in Trema's templates.
+    if ((int)$CFG->branch < 500) {
+        // Moodle 4.5 already provides the start/end spacing, float, text and border classes.
+        $scss .= '$trema-bs5-bridge: ' . ((int)$CFG->branch < 405 ? 'true' : 'false') . ";\n";
+        $scss .= file_get_contents("$CFG->dirroot/theme/trema/scss/bs5-compat.scss");
+    }
 
     if (empty($theme->settings->enabletremalines)) {
         $scss .= "%border-frequency { &:before, &:after { content: none !important;}}";
@@ -423,6 +444,27 @@ function theme_trema_page_init(moodle_page $page) {
         }
     }
 
+    // Help users find form fields with validation errors.
+    $page->requires->js_call_amd('theme_trema/formerrors', 'init', [[
+        'one' => get_string('formerrorsone', 'theme_trema'),
+        'many' => get_string('formerrorsmany', 'theme_trema', '{count}'),
+    ]]);
+
+    // Moodle sends users with an incomplete profile to their profile page without saying what is missing.
+    if (
+        $page->url->compare(new moodle_url('/user/edit.php'), URL_MATCH_BASE)
+        && in_array($page->url->get_param('id'), [null, $USER->id])
+    ) {
+        $missingfields = theme_trema_get_missing_profile_fields();
+        if (!empty($missingfields)) {
+            $links = [];
+            foreach ($missingfields as $elementid => $fieldname) {
+                $links[] = html_writer::link('#fitem_' . $elementid, $fieldname);
+            }
+            \core\notification::warning(get_string('profilemissingfields', 'theme_trema', implode(', ', $links)));
+        }
+    }
+
     // Load profilefields JS if the setting is enabled.
     $enforcerequiredprofilefields = get_config('theme_trema', 'enforcerequiredprofilefields');
     if (!empty($enforcerequiredprofilefields)) {
@@ -458,4 +500,36 @@ function theme_trema_get_profilefields_data(): ?array {
     }
 
     return !empty($requiredfields) ? ['requiredfields' => $requiredfields] : null;
+}
+
+/**
+ * Get the required profile fields the current user has not filled in yet.
+ *
+ * Uses the same rules as user_not_fully_set_up() and profile_has_required_custom_fields_set().
+ *
+ * @return array Form element ID => field name.
+ */
+function theme_trema_get_missing_profile_fields(): array {
+    global $CFG, $USER;
+    require_once("{$CFG->dirroot}/user/profile/lib.php");
+
+    if (!isloggedin() || isguestuser()) {
+        return [];
+    }
+
+    $missingfields = [];
+    foreach (['firstname', 'lastname', 'email'] as $field) {
+        if (empty($USER->$field)) {
+            $missingfields['id_' . $field] = get_string($field);
+        }
+    }
+    foreach (profile_get_user_fields_with_data($USER->id) as $field) {
+        if (
+            $field->is_required() && !$field->is_locked() && $field->is_empty()
+            && $field->get_field_config_for_external()['visible']
+        ) {
+            $missingfields['id_' . $field->inputname] = format_string($field->field->name);
+        }
+    }
+    return $missingfields;
 }

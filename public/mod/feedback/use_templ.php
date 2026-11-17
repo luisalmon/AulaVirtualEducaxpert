@@ -31,7 +31,6 @@ $templateid = optional_param('templateid', false, PARAM_INT);
 if (!$templateid) {
     redirect('edit.php?id='.$id);
 }
-$template = $DB->get_record('feedback_template', ['id' => $templateid], '*', MUST_EXIST);
 
 $url = new moodle_url('/mod/feedback/use_templ.php', array('id'=>$id, 'templateid'=>$templateid));
 $PAGE->set_url($url);
@@ -40,6 +39,8 @@ list($course, $cm) = get_course_and_cm_from_cmid($id, 'feedback');
 $context = context_module::instance($cm->id);
 
 require_login($course, true, $cm);
+
+$template = \mod_feedback\manager::get_template_record_if_accessible($templateid, $course->id);
 
 $feedback = $PAGE->activityrecord;
 $feedbackstructure = new mod_feedback_structure($feedback, $cm, 0, $templateid);
@@ -53,6 +54,7 @@ $strfeedback  = get_string("modulename", "feedback");
 $params = ['id' => $id];
 $activeurl = new moodle_url('/mod/feedback/manage_templates.php', $params);
 $PAGE->set_url($activeurl);
+$PAGE->set_show_navigation_footer(false);
 
 $PAGE->set_heading($course->fullname);
 $PAGE->set_title($feedback->name);
@@ -74,4 +76,3 @@ $form = new mod_feedback_complete_form(mod_feedback_complete_form::MODE_VIEW_TEM
 $form->display();
 
 echo $OUTPUT->footer();
-

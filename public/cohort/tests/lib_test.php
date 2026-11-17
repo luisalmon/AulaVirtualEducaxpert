@@ -33,6 +33,13 @@ require_once("$CFG->dirroot/cohort/lib.php");
  * @copyright  2012 Petr Skoda {@link http://skodak.org}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversFunction('cohort_get_cohort')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('cohort_get_cohorts')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('cohort_get_all_cohorts')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('cohort_get_available_cohorts')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('cohort_get_user_cohorts')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('cohort_get_custom_fields_data')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('cohort_can_view_cohort')]
 final class lib_test extends \advanced_testcase {
 
     /**
@@ -692,12 +699,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test that all get functions return custom fields data.
-     *
-     * @covers ::cohort_get_cohort
-     * @covers ::cohort_get_cohorts
-     * @covers ::cohort_get_all_cohorts
-     * @covers ::cohort_get_available_cohorts
-     * @covers ::cohort_get_user_cohorts
      */
     public function test_get_functions_return_custom_fields(): void {
         $this->resetAfterTest();
@@ -833,9 +834,12 @@ final class lib_test extends \advanced_testcase {
      * Create a cohort with allowcohortthemes enabled/disabled.
      */
     public function test_cohort_add_theme_cohort(): void {
-        global $DB;
+        global $CFG, $DB;
 
         $this->resetAfterTest();
+
+        // Use the fixture themes so cohort themes can differ from the site theme.
+        $CFG->themedir = $CFG->dirroot . '/lib/tests/fixtures/themes';
 
         // Theme is added when allowcohortthemes is enabled.
         set_config('allowcohortthemes', 1);
@@ -843,7 +847,7 @@ final class lib_test extends \advanced_testcase {
 
         $systemctx = \context_system::instance();
         $cohort1 = $this->getDataGenerator()->create_cohort(array('contextid' => $systemctx->id, 'name' => 'test cohort 1',
-            'idnumber' => 'testid1', 'description' => 'test cohort desc', 'descriptionformat' => FORMAT_HTML, 'theme' => 'classic'));
+            'idnumber' => 'testid1', 'description' => 'test cohort desc', 'descriptionformat' => FORMAT_HTML, 'theme' => 'parent'));
 
         $id = cohort_add_cohort($cohort1);
         $this->assertNotEmpty($id);
@@ -862,7 +866,7 @@ final class lib_test extends \advanced_testcase {
         set_config('allowcohortthemes', 0);
 
         $cohort2 = $this->getDataGenerator()->create_cohort(array('contextid' => $systemctx->id, 'name' => 'test cohort 2',
-            'idnumber' => 'testid2', 'description' => 'test cohort desc', 'descriptionformat' => FORMAT_HTML, 'theme' => 'classic'));
+            'idnumber' => 'testid2', 'description' => 'test cohort desc', 'descriptionformat' => FORMAT_HTML, 'theme' => 'parent'));
 
         $id = cohort_add_cohort($cohort2);
         $this->assertNotEmpty($id);
@@ -875,9 +879,12 @@ final class lib_test extends \advanced_testcase {
      * Update a cohort with allowcohortthemes enabled/disabled.
      */
     public function test_cohort_update_theme_cohort(): void {
-        global $DB;
+        global $CFG, $DB;
 
         $this->resetAfterTest();
+
+        // Use the fixture themes so cohort themes can differ from the site theme.
+        $CFG->themedir = $CFG->dirroot . '/lib/tests/fixtures/themes';
 
         // Enable cohort themes.
         set_config('allowcohortthemes', 1);
@@ -885,14 +892,14 @@ final class lib_test extends \advanced_testcase {
 
         $systemctx = \context_system::instance();
         $cohort1 = $this->getDataGenerator()->create_cohort(array('contextid' => $systemctx->id, 'name' => 'test cohort 1',
-            'idnumber' => 'testid1', 'description' => 'test cohort desc', 'descriptionformat' => FORMAT_HTML, 'theme' => 'classic'));
+            'idnumber' => 'testid1', 'description' => 'test cohort desc', 'descriptionformat' => FORMAT_HTML, 'theme' => 'parent'));
         $id = cohort_add_cohort($cohort1);
         $this->assertNotEmpty($id);
 
         // Theme is updated when allowcohortthemes is enabled.
         $cohort1 = $DB->get_record('cohort', array('id' => $id));
         $cohort1->name = 'test cohort 1 updated';
-        $cohort1->theme = 'classic';
+        $cohort1->theme = 'child';
         cohort_update_cohort($cohort1);
         $updatedcohort = $DB->get_record('cohort', array('id' => $id));
         $this->assertEquals($cohort1->contextid, $updatedcohort->contextid);
@@ -904,7 +911,7 @@ final class lib_test extends \advanced_testcase {
         // Theme is not updated neither overwritten when allowcohortthemes is disabled.
         set_config('allowcohortthemes', 0);
         $cohort2 = $DB->get_record('cohort', array('id' => $id));
-        $cohort2->theme = 'classic';
+        $cohort2->theme = 'parent';
         cohort_update_cohort($cohort2);
         $updatedcohort = $DB->get_record('cohort', array('id' => $id));
         $this->assertEquals($cohort2->contextid, $updatedcohort->contextid);
@@ -914,8 +921,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test that lib function returns custom field data for a cohorts.
-     *
-     * @covers ::cohort_get_custom_fields_data
      */
     public function test_cohort_get_custom_fields_data(): void {
         $this->resetAfterTest();
@@ -945,8 +950,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test whether user can view cohort
-     *
-     * @covers ::cohort_can_view_cohort
      */
     public function test_cohort_can_view_cohort(): void {
         $this->resetAfterTest();
@@ -960,8 +963,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test the behaviour of cohort_get_cohort().
-     *
-     * @covers ::cohort_get_cohort
      */
     public function test_cohort_get_cohort(): void {
         $this->resetAfterTest();

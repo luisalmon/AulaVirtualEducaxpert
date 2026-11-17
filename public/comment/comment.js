@@ -74,8 +74,17 @@ M.core_comment = {
                 var ta = Y.one('#dlg-content-'+this.client_id);
                 var scope = this;
                 var value = ta.get('value');
-                var highlightBg = '#fcefdc'; // --mds-bg-feedback-warning-subtle.
-                var highlightText = '#60451f'; // --mds-text-feedback-warning: 7.82:1 on highlightBg.
+                // Read design-system CSS custom properties at runtime so custom themes
+                // are respected. YUI2 ColorAnim requires literal colour values, so
+                // getComputedStyle is used with hardcoded hex fallbacks for environments
+                // where the CSS custom properties are not defined.
+                var rootStyle = getComputedStyle(document.documentElement);
+                var highlightBg = rootStyle.getPropertyValue(
+                    '--mds-bg-feedback-warning-subtle').trim() || '#fcefdc';
+                var highlightText = rootStyle.getPropertyValue(
+                    '--mds-text-feedback-warning').trim() || '#60451f';
+                var bodyBg = rootStyle.getPropertyValue('--bs-body-bg').trim() || '#FFFFFF';
+                var bodyColor = rootStyle.getPropertyValue('--bs-body-color').trim() || '#000000';
                 if (value) {
                     ta.set('disabled', true);
                     var spinner = M.util.add_spinner(Y, container);
@@ -102,9 +111,12 @@ M.core_comment = {
                                 linkTextCount.set('innerHTML', obj.count);
                             }
                             for(var i in ids) {
+                                // The starting colours are given explicitly: a new comment has no background of
+                                // its own, and YUI resolves that to white, which would animate the highlight
+                                // through colours the comment text cannot be read against in dark mode.
                                 var attributes = {
-                                    color: {to: highlightText},
-                                    backgroundColor: {to: highlightBg}
+                                    color: {from: bodyColor, to: highlightText},
+                                    backgroundColor: {from: bodyBg, to: highlightBg}
                                 };
                                 var anim = new Y.YUI2.util.ColorAnim(ids[i], attributes);
                                 anim.animate();
@@ -115,7 +127,7 @@ M.core_comment = {
                     }, true);
                 } else {
                     var attributes = {
-                        backgroundColor: {from: highlightBg, to: '#FFFFFF'}
+                        backgroundColor: {from: highlightBg, to: bodyBg}
                     };
                     var anim = new Y.YUI2.util.ColorAnim('dlg-content-'+this.client_id, attributes);
                     anim.animate();

@@ -552,7 +552,8 @@ body.path-mod-quiz {
         border-top-right-radius: 0.5rem;
     }
     .card-footer.border-0,
-    .card-deck .card {
+    .card-deck .card,
+    .course-card-deck .card {
         border-radius: 0.5rem;
     }
     .badge,
@@ -577,4 +578,10 @@ body.path-mod-quiz {
 // until the issue is resolved in Moodle core. See https://tracker.moodle.org/browse/MDL-74422
 div#dateselector-calendar-panel {
     z-index: 3100 !important;
+}
+
+// Keep form fields and the form error summary clear of the fixed navbar when scrolled to.
+.mform .fitem,
+.trema-errorsummary {
+    scroll-margin-top: calc(#{$navbar-height} + 1rem);
 }

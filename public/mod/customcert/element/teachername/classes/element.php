@@ -18,7 +18,7 @@
  * This file contains the customcert element teachername's core interaction API.
  *
  * @package    customcertelement_teachername
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -30,9 +30,8 @@ use context_system;
 use mod_customcert\element\persistable_element_interface;
 use mod_customcert\element as base_element;
 use mod_customcert\element\renderable_element_interface;
-use mod_customcert\element\form_element_interface;
-use mod_customcert\element\validatable_element_interface;
 use mod_customcert\element\preparable_form_interface;
+use mod_customcert\element\stylable_payload;
 use mod_customcert\element_helper;
 use mod_customcert\service\element_renderer;
 use MoodleQuickForm;
@@ -43,15 +42,13 @@ use stdClass;
  * The customcert element teachername's core interaction API.
  *
  * @package    customcertelement_teachername
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class element extends base_element implements
-    form_element_interface,
     persistable_element_interface,
     preparable_form_interface,
-    renderable_element_interface,
-    validatable_element_interface
+    renderable_element_interface
 {
     /**
      * Build the configuration form for this element.
@@ -78,13 +75,10 @@ class element extends base_element implements
      * @return array JSON-serialisable payload
      */
     public function normalise_data(stdClass $formdata): array {
-        return [
-            'teacher' => (string)($formdata->teacher ?? ''),
-            'font' => (string)($formdata->font ?? ''),
-            'fontsize' => (int)($formdata->fontsize ?? 0),
-            'colour' => (string)($formdata->colour ?? ''),
-            'width' => (int)($formdata->width ?? 0),
-        ];
+        return array_merge(
+            ['teacher' => (string)($formdata->teacher ?? '')],
+            stylable_payload::from_form($formdata)->to_array(),
+        );
     }
 
     /**
@@ -93,7 +87,6 @@ class element extends base_element implements
      * @param MoodleQuickForm $mform
      */
     public function prepare_form(MoodleQuickForm $mform): void {
-        // Preselect stored teacher id if present.
         $payload = $this->get_payload();
         if (isset($payload['teacher'])) {
             $mform->getElement('teacher')->setValue((int)$payload['teacher']);
@@ -126,10 +119,7 @@ class element extends base_element implements
     }
 
     /**
-     * Render the element in html.
-     *
-     * This function is used to render the element when we are using the
-     * drag and drop interface to position it.
+     * Render the element in html for the drag and drop interface.
      *
      * @param element_renderer|null $renderer the renderer service
      * @return string the html
@@ -159,15 +149,12 @@ class element extends base_element implements
     protected function get_list_of_teachers() {
         global $PAGE;
 
-        // Return early if we are in a site template.
         if ($PAGE->context->id == context_system::instance()->id) {
             return [];
         }
 
-        // The list of teachers to return.
         $teachers = [];
 
-        // Now return all users who can manage the customcert in this context.
         if ($users = get_enrolled_users($PAGE->context, 'mod/customcert:manage')) {
             foreach ($users as $user) {
                 $teachers[$user->id] = fullname($user);
@@ -175,16 +162,5 @@ class element extends base_element implements
         }
 
         return $teachers;
-    }
-
-    /**
-     * Validate submitted form data for this element.
-     * Core validations are handled by validation_service; no extra rules here.
-     *
-     * @param array $data
-     * @return array<string,string>
-     */
-    public function validate(array $data): array {
-        return [];
     }
 }

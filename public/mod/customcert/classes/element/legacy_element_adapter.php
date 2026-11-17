@@ -37,31 +37,56 @@ use mod_customcert\service\element_factory;
 use restore_customcert_activity_task;
 
 /**
- * Adapter that exposes legacy elements through the new element interfaces.
- *
- * This class is part of the compatibility layer for legacy element plugins that extend
- * the mod_customcert\element base class. It allows those plugins to work with the v2
- * element system without modification.
- *
- * Plugin authors should migrate their elements to implement element_interface directly.
- * This class is not part of the public API and should not be used directly by plugin authors.
+ * Exposes legacy element plugins (extending mod_customcert\element) through the v2 element
+ * interfaces, delegating to historical hooks such as render_form_elements() and
+ * save_unique_data(). Native v2 elements implement the interfaces directly and are never wrapped.
  */
 final class legacy_element_adapter implements
     form_element_interface,
     layout_element_interface,
+    raw_data_element_interface,
     renderable_element_interface,
     restorable_element_interface,
     stylable_element_interface {
     /** @var legacy_base The wrapped legacy element instance. */
     private legacy_base $inner;
 
+    /** @var bool Whether the wrapped render() declares a renderer parameter (released 5.2 shape). */
+    private bool $innerrenderacceptsrenderer;
+
+    /** @var bool Whether the wrapped render_html() declares a renderer parameter (released 5.2 shape). */
+    private bool $innerrenderhtmlacceptsrenderer;
+
     /**
      * Constructor.
+     *
+     * Reflects once on render()/render_html() so both the 4.5-era signatures and the released
+     * 5.2 renderer argument are honoured without reflecting on every render call.
      *
      * @param legacy_base $legacy Legacy element instance to wrap.
      */
     public function __construct(legacy_base $legacy) {
         $this->inner = $legacy;
+        $this->innerrenderacceptsrenderer = self::accepts_argument_at(new \ReflectionMethod($legacy, 'render'), 3);
+        $this->innerrenderhtmlacceptsrenderer =
+            self::accepts_argument_at(new \ReflectionMethod($legacy, 'render_html'), 0);
+    }
+
+    /**
+     * Whether a method's declaration accepts a positional argument at the given index,
+     * either through enough declared parameters or a variadic parameter at or before it.
+     *
+     * @param \ReflectionMethod $method
+     * @param int $position Zero-based argument position.
+     * @return bool
+     */
+    private static function accepts_argument_at(\ReflectionMethod $method, int $position): bool {
+        $params = $method->getParameters();
+        if (count($params) > $position) {
+            return true;
+        }
+        $last = end($params);
+        return $last !== false && $last->isVariadic() && $last->getPosition() <= $position;
     }
 
     /**
@@ -107,6 +132,15 @@ final class legacy_element_adapter implements
      */
     public function get_data(): mixed {
         return $this->inner->get_data();
+    }
+
+    /**
+     * Get the raw, untouched persistence representation of the wrapped element's data.
+     *
+     * @return mixed
+     */
+    public function get_raw_data(): mixed {
+        return $this->inner->get_raw_data();
     }
 
     /**
@@ -194,11 +228,9 @@ final class legacy_element_adapter implements
     /**
      * Validate form elements (legacy fallback).
      *
-     * Only invokes the legacy hook when the wrapped element actually overrides it;
-     * calling the inherited no-op base implementation would emit a spurious deprecation.
-     * No deprecation notice is emitted here; validation is a read-only check and the
-     * deprecation for legacy save/persist hooks is emitted by the service layer
-     * (persistence_helper) when it actually invokes save_unique_data().
+     * Only invokes the legacy hook when the wrapped element overrides it, as calling the
+     * inherited no-op base implementation would emit a spurious deprecation. No notice is
+     * emitted here: persistence_helper reports the deprecation when it calls save_unique_data().
      *
      * @param array $data
      * @param array $files
@@ -236,6 +268,10 @@ final class legacy_element_adapter implements
     /**
      * Render the element into a PDF context.
      *
+     * Preserves the wrapped element's own call shape: a genuine 4.5-era historical
+     * render($pdf, $preview, $user) is called with exactly those three arguments, while a
+     * released 5.2-compatible render() that declares the renderer parameter also receives it.
+     *
      * @param \pdf $pdf
      * @param bool $preview
      * @param \stdClass $user
@@ -243,17 +279,28 @@ final class legacy_element_adapter implements
      * @return void
      */
     public function render(\pdf $pdf, bool $preview, \stdClass $user, ?element_renderer $renderer = null): void {
-        $this->inner->render($pdf, $preview, $user, $renderer);
+        if ($this->innerrenderacceptsrenderer) {
+            $this->inner->render($pdf, $preview, $user, $renderer);
+        } else {
+            $this->inner->render($pdf, $preview, $user);
+        }
     }
 
     /**
      * Render the element in HTML for the drag and drop interface.
      *
+     * Preserves the wrapped element's own call shape: a genuine 4.5-era historical
+     * render_html() is called with no arguments, while a released 5.2-compatible
+     * render_html() that declares the renderer parameter also receives it.
+     *
      * @param element_renderer|null $renderer
      * @return string
      */
     public function render_html(?element_renderer $renderer = null): string {
-        return $this->inner->render_html($renderer);
+        if ($this->innerrenderhtmlacceptsrenderer) {
+            return (string) $this->inner->render_html($renderer);
+        }
+        return (string) $this->inner->render_html();
     }
 
     /**
@@ -295,25 +342,24 @@ final class legacy_element_adapter implements
     /**
      * Sets the data on the form when editing an element (legacy fallback).
      *
-     * Only invokes the legacy hook when the wrapped element actually overrides it;
-     * calling the inherited no-op base implementation would emit a spurious deprecation.
-     * The deprecation notice is emitted here (the compatibility bridge) rather than
-     * in the base class no-op, so it is only emitted once.
+     * Always delegates, including to the inherited mod_customcert\element implementation,
+     * which populates the common form fields. A legacy override calling
+     * parent::definition_after_data() triggers that implementation's own deprecation notice;
+     * the warning count before/after detects that, so this only emits a fallback notice when
+     * the override did not call the parent at all.
      *
      * @param \MoodleQuickForm $mform
      * @return void
      */
     public function definition_after_data(MoodleQuickForm $mform): void {
-        if (method_exists($this->inner, 'definition_after_data')) {
-            $ref = new \ReflectionMethod($this->inner, 'definition_after_data');
-            if ($ref->getDeclaringClass()->getName() !== \mod_customcert\element::class) {
-                debugging(
-                    'definition_after_data() is deprecated since Moodle 5.2. '
-                    . 'Implement mod_customcert\\element\\preparable_form_interface::prepare_form() instead.',
-                    DEBUG_DEVELOPER
-                );
-                $this->inner->definition_after_data($mform);
-            }
+        $warningsbefore = $this->inner->get_definition_after_data_warning_count();
+        $this->inner->definition_after_data($mform);
+        if ($this->inner->get_definition_after_data_warning_count() === $warningsbefore) {
+            debugging(
+                'definition_after_data() is deprecated since Moodle 5.2. '
+                . 'Implement mod_customcert\\element\\preparable_form_interface::prepare_form() instead.',
+                DEBUG_DEVELOPER
+            );
         }
     }
 
@@ -356,7 +402,7 @@ final class legacy_element_adapter implements
      * Delegates to element_repository::delete(). New code should use the repository directly
      * rather than calling delete() on the element.
      *
-     * @return bool success return true if deletion success, false otherwise
+     * @return bool true on success
      */
     public function delete(): bool {
         $repository = new element_repository(element_factory::build_with_defaults());

@@ -18,7 +18,7 @@
  * Customcert module upgrade code.
  *
  * @package    mod_customcert
- * @copyright  2016 Mark Nelson <markn@moodle.com>
+ * @copyright  2016 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -93,10 +93,8 @@ function xmldb_customcert_upgrade($oldversion) {
                         AND ci.customcertid = minid.customcertid
                         AND ci.id > minid.minid";
 
-        // Get the records themselves.
         $getduplicatessql = "SELECT ci.id $fromclause ORDER BY minid";
         if ($records = $DB->get_records_sql($getduplicatessql)) {
-            // Delete them.
             $ids = implode(',', array_keys($records));
             $DB->delete_records_select('customcert_issues', "id IN ($ids)");
         }
@@ -275,7 +273,6 @@ function xmldb_customcert_upgrade($oldversion) {
             $defaultdata->last_processed = 0;
             $defaultdata->total_certificate_to_process = 0;
 
-            // Insert the default data into the table.
             $DB->insert_record('customcert_email_task_prgrs', $defaultdata);
         }
 
@@ -328,7 +325,6 @@ function xmldb_customcert_upgrade($oldversion) {
             $dbman->add_index($table, $index);
         }
 
-        // Update the plugin version in the database.
         upgrade_plugin_savepoint(true, 2024042210, 'mod', 'customcert');
     }
 
@@ -367,7 +363,11 @@ function xmldb_customcert_upgrade($oldversion) {
         // Each batch is committed independently so a partial failure can be retried safely.
         // Only rows whose serialised data actually changes are written back.
         $batchsize = 1000;
-        $lastid = 0;
+        $checkpoint = 'visualmigrationlastid';
+        $lastid = (int)get_config('mod_customcert', $checkpoint);
+        $table = new xmldb_table('customcert_elements');
+        // Dropping width starts only after all legacy rows have been migrated.
+        $haslegacywidth = $dbman->field_exists($table, new xmldb_field('width'));
         do {
             $rowsread = 0;
             $batch = [];
@@ -389,9 +389,30 @@ function xmldb_customcert_upgrade($oldversion) {
                 $recfsize  = isset($rec->fontsize) ? ($rec->fontsize === null ? null : (int)$rec->fontsize) : null;
                 $reccolour = isset($rec->colour) ? ($rec->colour === null ? null : (string)$rec->colour) : null;
 
-                $migrated = $rec->element === 'border'
-                    ? row_migrator::migrate_border_row($rec->data, $recwidth, $recfont, $recfsize, $reccolour)
-                    : row_migrator::migrate_row($rec->data, $recwidth, $recfont, $recfsize, $reccolour, $rec->element);
+                $migrated = match (true) {
+                    $rec->element === 'border' => row_migrator::migrate_border_row(
+                        $rec->data,
+                        $recwidth,
+                        $recfont,
+                        $recfsize,
+                        $reccolour
+                    ),
+                    $rec->element === 'text' && $haslegacywidth => row_migrator::migrate_text_row(
+                        $rec->data,
+                        $recwidth,
+                        $recfont,
+                        $recfsize,
+                        $reccolour
+                    ),
+                    default => row_migrator::migrate_row(
+                        $rec->data,
+                        $recwidth,
+                        $recfont,
+                        $recfsize,
+                        $reccolour,
+                        $rec->element
+                    ),
+                };
 
                 if ($migrated !== $rec->data) {
                     $batch[] = (object) ['id' => $rec->id, 'data' => $migrated];
@@ -399,18 +420,19 @@ function xmldb_customcert_upgrade($oldversion) {
             }
             $rs->close();
 
-            if ($batch) {
+            if ($rowsread) {
                 $transaction = $DB->start_delegated_transaction();
                 foreach ($batch as $row) {
                     $DB->update_record('customcert_elements', $row);
                 }
+                // Commit progress with the rows so a retry never wraps migrated text again.
+                set_config($checkpoint, $lastid, 'mod_customcert');
                 $transaction->allow_commit();
             }
         } while ($rowsread === $batchsize);
 
         // Drop the migrated columns from customcert_elements.
         // Wrapped in field_exists() guards so a retry after partial failure is safe.
-        $table = new xmldb_table('customcert_elements');
         foreach (['width', 'font', 'fontsize', 'colour'] as $mfield) {
             $field = new xmldb_field($mfield);
             if ($dbman->field_exists($table, $field)) {
@@ -420,9 +442,10 @@ function xmldb_customcert_upgrade($oldversion) {
 
         // Savepoint reached.
         upgrade_mod_savepoint(true, 2025122800, 'customcert');
+        unset_config($checkpoint, 'mod_customcert');
     }
 
-    if ($oldversion < 2026042008) {
+    if ($oldversion < 2026060501) {
         // Add 'completionemailed' field to enable per-instance completion when a certificate is emailed.
         $table = new xmldb_table('customcert');
         $field = new xmldb_field('completionemailed', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'emailothers');
@@ -430,6 +453,10 @@ function xmldb_customcert_upgrade($oldversion) {
             $dbman->add_field($table, $field);
         }
 
+        upgrade_mod_savepoint(true, 2026060501, 'customcert');
+    }
+
+    if ($oldversion < 2026060502) {
         // Records whether email_to_user() succeeded for this student specifically, unlike
         // 'emailed' which is also set for teachers/others. Nullable with no default: existing
         // issues predate this field and stay NULL (unknown/legacy), never inferred from
@@ -440,7 +467,18 @@ function xmldb_customcert_upgrade($oldversion) {
             $dbman->add_field($table, $field);
         }
 
-        upgrade_mod_savepoint(true, 2026042008, 'customcert');
+        upgrade_mod_savepoint(true, 2026060502, 'customcert');
+    }
+
+    if ($oldversion < 2026060504) {
+        // Per-certificate opt-in for automatic issuance independent of 'emailstudents' (#672, #904).
+        $table = new xmldb_table('customcert');
+        $field = new xmldb_field('issueautomatically', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'emailothers');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026060504, 'customcert');
     }
 
     return true;

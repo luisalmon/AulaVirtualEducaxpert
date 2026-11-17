@@ -4,7 +4,147 @@ All notable changes to this project will be documented in this file.
 
 Note - All hash comments refer to the issue number. Eg. #169 refers to https://github.com/mdjnelson/moodle-mod_customcert/issues/169.
 
-## [5.2.7] - 2026-MM-DD
+## [5.3.5] - 2026-11-14
+
+### Security
+
+- Fixed certificate PDF downloads bypassing activity group visibility restrictions ([GHSA-v4rx-4222-4qf3](https://github.com/mdjnelson/moodle-mod_customcert/security/advisories/GHSA-v4rx-4222-4qf3)).
+
+### Fixed
+
+- Allow native elements without optional base-class methods to appear in the designer (#1122).
+- Preserve the stored signing password when editing an existing signature without a replacement (#1125).
+- Fixed the activity description not being shown on the course page when "Display description on course page" is enabled (#1087).
+- Preserved historical text element content exactly, including JSON-looking text, when migrating or restoring older certificates (#1120).
+
+## [5.3.4] - 2026-11-01
+
+### Fixed
+
+- Fixed Moodle 5.2 elements that inherited `renderable_element_interface` losing their `normalise_data()`, `prepare_form()` and `validate()` handling (and saved JSON data) when adapted in Moodle 5.3 (#1090).
+
+### Changed
+
+- Removed empty `validate()` methods and unnecessary `validatable_element_interface` implementations from bundled elements. Third-party subclasses requiring custom validation should explicitly implement the interface (#1091).
+
+## [5.3.3] - 2026-10-25
+
+### Security
+
+- Fixed information disclosure of certificate issuance to users who are not permitted to view another user's certificates ([GHSA-xrf9-973c-472v](https://github.com/mdjnelson/moodle-mod_customcert/security/advisories/GHSA-xrf9-973c-472v)).
+
+### Fixed
+
+- Fixed incorrect issuer attribution for certificates issued via CLI (#757).
+- Fixed automatic certificate issuance for users not enrolled in a course (#773).
+- Fixed automatic certificate issuance bypassing activity restrictions for administrators and managers (#1039).
+
+## [5.3.2] - 2026-10-11
+
+### Fixed
+
+- Fixed missing certificates in site-wide downloads when certificates share a template name (#1019).
+- Fixed automatic certificate issuance being blocked by the certificate activity's own completion conditions (#1020).
+
+## [5.3.1] - 2026-10-06
+
+### Security
+
+- Fixed an authorisation bypass in mobile certificate issuance that could allow certificates to be issued without satisfying activity access restrictions ([GHSA-8qc7-g467-47v9](https://github.com/mdjnelson/moodle-mod_customcert/security/advisories/GHSA-8qc7-g467-47v9)).
+- Fixed validation of certificate element settings to prevent disclosure of sensitive user data, cross-course grades, and files through crafted save-element requests ([GHSA-q482-gjmc-jw88](https://github.com/mdjnelson/moodle-mod_customcert/security/advisories/GHSA-q482-gjmc-jw88)).
+
+## [5.3.0] - 2026-10-05
+
+### Changed
+
+- Refreshed the certificate rearrange (reposition elements) interface: the certificate canvas is now centred in a visually distinct workspace with a subtle border/shadow, the save/cancel actions have a clearer visual hierarchy (Save and close is now primary), and hover/focus/selection affordances on certificate elements are more visible (#926).
+
+### Developer notes
+
+- **Element authoring guide added** (#819). A new [docs/element_authoring.md](docs/element_authoring.md) explains which interfaces are required versus optional, provides a decision table, and includes examples for common element types (minimal static, text/stylable, image sketch, and copy-aware elements).
+- **`mod_customcert\element\stylable_payload` is an immutable value object** (#814, #815). `from_form()` and `from_array()` return a `stylable_payload` instance; call `->to_array()` when a plain array is needed.
+- **`mod_customcert\element\element_payload_interface`** (#815). Introduces a typed payload pattern for element data. Implement `from_array()`, `to_array()`, and `validate()` on a dedicated payload class when an element has a genuine invariant or conditional-serialization rule to enforce; the database continues to store JSON, and this interface governs the PHP layer only. Elements with a real invariant ship a dedicated payload class (`customcertelement_coursename\coursename_payload`, `customcertelement_image\image_payload`, `customcertelement_bgimage\bgimage_payload`, `customcertelement_digitalsignature\digitalsignature_payload`); simple elements compose `mod_customcert\element\stylable_payload` directly in `normalise_data()` instead of wrapping it in an element-specific class. See [docs/element_payload_interface.md](docs/element_payload_interface.md) for the full guide.
+
+### Deprecated / compatibility
+
+Moodle 5.3 is the final LTS compatibility bridge release for third-party `customcertelement_*`
+plugins upgrading directly from Moodle 4.5 LTS. Moodle 5.2 introduced Element System v2 and
+deprecated the historical `mod_customcert\element` runtime API; Moodle 5.3 keeps a deprecated
+compatibility bridge available so a genuine Moodle 4.5-era element, and a plugin already migrated
+to the released Moodle 5.2 contract, both continue to run. Native Element System v2 elements are
+unaffected and never go through the bridge. **Moodle 5.3 is the final release supporting the
+legacy runtime element API; it is removed in the Moodle 6.0-compatible release** (#953, #960,
+#980, #981). Plugin authors should migrate to Element System v2 now — see
+[docs/element_migration_v2.md](docs/element_migration_v2.md) for the full lifecycle and how to identify legacy dependence.
+Historical database-upgrade and backup/restore migration logic for old persisted element data is
+an independent concern and is not tied to this runtime removal date.
+
+- **`mod_customcert\certificate` facade** (#975). Remains available as a deprecated compatibility
+  facade with all of its historical public methods and constants. New code should use the focused
+  services/repositories instead: `form_service`, `element_helper`, `certificate_time_service`,
+  `certificate_download_service`, `issue_repository`, `certificate_repository`, and
+  `certificate_issue_service`. Removal is planned no earlier than the Moodle 6.0-compatible
+  release.
+- **`mod_customcert\template` forwarding methods** (#976). The nine deprecated instance methods
+  (`save`, `add_page`, `save_page`, `delete`, `delete_page`, `delete_element`, `generate_pdf`,
+  `copy_to_template`, `move_item`) remain available as compatibility shims delegating to
+  `template_service` and `pdf_generation_service`. Removal is planned no earlier than the Moodle
+  6.0-compatible release.
+- **Historical static `mod_customcert\element_factory::get_element_instance()`** (#974). Remains
+  available, deprecated, for historical callers that need the raw plugin object. New code should
+  use `mod_customcert\service\element_factory::build_with_defaults()->create_from_record()`. This
+  compatibility shim will be removed in the Moodle 6.0-compatible release.
+- **Legacy element lifecycle methods** (#984). `element::save_form_elements()`,
+  `element::copy_element()`, and `element::delete()` remain available, deprecated, delegating to
+  `element_repository`. New code should implement the Element System v2 interfaces and use
+  `element_repository` directly.
+- **`mod_customcert\service\element_factory::create_from_legacy_record()`** (#985). Remains
+  available as a documented Moodle 5.2 replacement API for the historical static factory shim; it
+  is not itself deprecated. New/internal code should prefer `create_from_record()`.
+
+#### Legacy hooks and their Element System v2 replacements
+
+| Legacy hook | Element System v2 replacement |
+|---|---|
+| Legacy element identity/data methods | `element_interface` |
+| Legacy edit form hooks (`render_form_elements`) | `form_element_interface` |
+| Legacy form preparation (`definition_after_data`) | `preparable_form_interface` |
+| Legacy rendering hooks (`render`, `render_html`) | `renderable_element_interface` |
+| Legacy style/font/colour handling | `stylable_element_interface` and normalized payload data |
+| Legacy layout handling | `layout_element_interface` and repository-managed layout fields |
+| Legacy persistence hooks (`save_unique_data`, `save_form_elements`) | `persistable_element_interface` plus repository/service persistence |
+| Legacy validation hooks (`validate_form_elements`) | `validatable_element_interface` |
+| Legacy restore hooks (`after_restore`) | `restorable_element_interface` |
+| Legacy copy hooks (`copy_element`) | `copyable_element_interface` |
+
+## [5.2.9] - 2026-10-01
+
+### Fixed
+
+- Preserve migrated element data and visual settings when editing or saving legacy third-party elements (#968).
+- Preserve structured JSON payloads for migrated third-party elements instead of treating them as legacy scalar data (#999).
+
+## [5.2.8] - 2026-09-19
+
+### Security
+
+- Hardened element identity handling when saving custom certificate elements ([GHSA-4xmv-rv36-86m8](https://github.com/mdjnelson/moodle-mod_customcert/security/advisories/GHSA-4xmv-rv36-86m8)).
+
+### Fixed
+
+- Restored the runtime language when PDF generation fails (#933).
+- Limited the number of PDFs generated per request in the issues web service to prevent excessive resource use (#934).
+
+### Changed
+
+- Downloading all certificates from the site is now asynchronous (#692).
+
+## [5.2.7] - 2026-09-15
+
+### Security
+
+- Fixed template management authorisation to ensure permissions are checked against the target template's context rather than a caller-supplied context.
+- Custom profile fields used by the User field element now respect Moodle's profile field visibility rules, preventing hidden profile data from being displayed to users who do not have permission to view it.
 
 ### Fixed
 
@@ -13,6 +153,7 @@ Note - All hash comments refer to the issue number. Eg. #169 refers to https://g
 ### Added
 
 - Added an automatic activity completion condition for certificates emailed to students, allowing students to complete the activity when their certificate is sent by email without needing to view the activity (#645).
+- Added an opt-in "Issue certificates automatically" setting, allowing certificates to be issued and sent to "Email teachers" or "Email others" recipients when "Email students" is disabled (#904)
 
 ## [5.2.6] - 2026-08-23
 
@@ -31,9 +172,9 @@ Note - All hash comments refer to the issue number. Eg. #169 refers to https://g
 
 ### Security
 
-- Added a missing capability check so that only users who can manage a certificate template can fetch element HTML or the admin edit-element form via `get_element_html()` and the `editelement` fragment callback (#871).
-- `view.php`'s report-download flow (`downloadissue`) now verifies the target user has actually been issued the certificate before generating a PDF for them, preventing a report-viewer from generating a certificate for an arbitrary user who was never issued one (#871).
-- Moved the login check in `my_certificates.php` above the certificate-issuance existence check, preventing an unauthenticated user from probing whether a given user has been issued a given certificate (#871).
+- Added a missing capability check so that only users who can manage a certificate template can fetch element HTML or the admin edit-element form via `get_element_html()` and the `editelement` fragment callback (#872).
+- `view.php`'s report-download flow (`downloadissue`) now verifies the target user has actually been issued the certificate before generating a PDF for them, preventing a report-viewer from generating a certificate for an arbitrary user who was never issued one (#872).
+- Moved the login check in `my_certificates.php` above the certificate-issuance existence check, preventing an unauthenticated user from probing whether a given user has been issued a given certificate (#872).
 
 ## [5.2.4] - 2026-08-02
 
@@ -92,6 +233,8 @@ Third-party elements should migrate to the new element interfaces under `mod_cus
 The legacy `mod_customcert\element` base class remains available for compatibility during this major release, but legacy hooks with replacement interfaces are deprecated and will be removed in a future major version.
 
 > **Important**: Third-party element plugins that extend `mod_customcert\element` and override `render()` or `render_html()` **must update their method signatures** to match the new typed signatures before upgrading to 5.2. Plugins with old untyped signatures for these two methods will fail at class-load time. The deprecated legacy hooks (`render_form_elements`, `definition_after_data`, `validate_form_elements`, `save_form_elements`, `save_unique_data`, `after_restore`, `copy_element`) retain untyped base signatures and are intended to remain compatible with old-style untyped overrides. `can_add()` retains its typed `bool` return and is not deprecated; third-party overrides must declare `public static function can_add(): bool`. See the "Element rendering signatures" section below for the required `render`/`render_html` signatures.
+
+> **Superseded as of `mod_customcert` 5.2.13**: The class-load failure for untyped `render()`/`render_html()` overrides described above was introduced in `mod_customcert` 5.2.0, persisted through 5.2.12, and was corrected in 5.2.13, which restored compatibility with historical third-party elements (#1103) and their protected element properties (#1107). The Moodle 5.3-compatible plugin branch supports the same elements, and plugins updated for the originally released 5.2 API, through its deprecated compatibility bridge. The note above is kept as a record of the 5.2.0 release notes. New elements must still implement `renderable_element_interface` explicitly; see [docs/element_migration_v2.md](docs/element_migration_v2.md).
 
 New elements should use:
 - `element_interface` — for the core element contract (identity, payload, type)
@@ -189,6 +332,8 @@ Reserved JSON keys (visuals):
 #### Element rendering signatures
 
 > **Breaking change for third-party element plugins**: The `render()` and `render_html()` abstract methods on `mod_customcert\element` now have strict typed signatures and return types. Third-party element plugins that override these methods with the old untyped signatures will fail at class-load time with a PHP fatal error, even before the adapter layer can help. Plugins must update their method signatures before upgrading to 5.2. See the before/after signatures below.
+>
+> This describes the requirement as released in `mod_customcert` 5.2.0 and in effect through 5.2.12; compatibility was restored in 5.2.13 and is bridged on the Moodle 5.3-compatible branch (see the clarification above).
 
 - Element render methods are now typed and accept an optional renderer.
 
@@ -349,7 +494,7 @@ Existing element plugins may continue using legacy hooks in 5.2, but must be upd
 #### Common pitfalls
 - Do not assume `get_data()` returns a scalar string; it may be JSON with multiple keys.
 - Do not overwrite the whole JSON payload with a single scalar; always normalise to an object payload via Element System v2 interfaces.
-- Do not store standard visual fields (`font`/`fontsize`/`colour`/`width`) in custom keys; rely on the core merge behaviour.
+- Return standard visual fields (`font`/`fontsize`/`colour`/`width`) from `normalise_data()` when your element exposes them; they are not merged centrally.
 
 ## [5.0.2] - 2025-12-18
 

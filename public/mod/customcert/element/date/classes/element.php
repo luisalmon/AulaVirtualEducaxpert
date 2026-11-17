@@ -18,7 +18,7 @@
  * This file contains the customcert element date's core interaction API.
  *
  * @package    customcertelement_date
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -28,10 +28,9 @@ namespace customcertelement_date;
 
 use mod_customcert\element as base_element;
 use mod_customcert\element\persistable_element_interface;
-use mod_customcert\element\form_element_interface;
-use mod_customcert\element\validatable_element_interface;
 use mod_customcert\element\preparable_form_interface;
 use mod_customcert\element\renderable_element_interface;
+use mod_customcert\element\stylable_payload;
 use mod_customcert\element_helper;
 use mod_customcert\service\certificate_repository;
 use MoodleQuickForm;
@@ -50,16 +49,14 @@ require_once($CFG->dirroot . '/lib/grade/constants.php');
  * The customcert element date's core interaction API.
  *
  * @package    customcertelement_date
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class element extends base_element implements
-    form_element_interface,
     persistable_element_interface,
     preparable_form_interface,
     renderable_element_interface,
-    restorable_element_interface,
-    validatable_element_interface
+    restorable_element_interface
 {
     /** @var string Course grade date identifier. */
     public const string DATE_COURSE_GRADE = '0';
@@ -94,7 +91,6 @@ class element extends base_element implements
     public function build_form(MoodleQuickForm $mform): void {
         global $CFG, $COURSE;
 
-        // Get the possible date options.
         $dateoptions = [];
         $dateoptions[self::DATE_ISSUE] = get_string('issueddate', 'customcertelement_date');
         $dateoptions[self::DATE_CURRENT_DATE] = get_string('currentdate', 'customcertelement_date');
@@ -130,25 +126,13 @@ class element extends base_element implements
      * @return array JSON-serialisable payload
      */
     public function normalise_data(stdClass $formdata): array {
-        return [
-            'dateitem' => $formdata->dateitem ?? '',
-            'dateformat' => $formdata->dateformat ?? '',
-            'font' => (string)($formdata->font ?? ''),
-            'fontsize' => (int)($formdata->fontsize ?? 0),
-            'colour' => (string)($formdata->colour ?? ''),
-            'width' => (int)($formdata->width ?? 0),
-        ];
-    }
-
-    /**
-     * Validate submitted form data for this element.
-     * Core validations are handled by validation_service; no extra rules here.
-     *
-     * @param array $data
-     * @return array<string,string>
-     */
-    public function validate(array $data): array {
-        return [];
+        return array_merge(
+            [
+                'dateitem' => (string)($formdata->dateitem ?? ''),
+                'dateformat' => (string)($formdata->dateformat ?? ''),
+            ],
+            stylable_payload::from_form($formdata)->to_array(),
+        );
     }
 
 
@@ -163,27 +147,21 @@ class element extends base_element implements
     public function render(pdf $pdf, bool $preview, stdClass $user, ?element_renderer $renderer = null): void {
         global $DB;
 
-        // If there is no element data, we have nothing to display.
         if (empty($this->get_data())) {
             return;
         }
 
         $courseid = element_helper::get_courseid($this->id);
 
-        // Decode the information stored in the database.
         $dateinfo = json_decode($this->get_data());
         $dateitem = $dateinfo->dateitem;
         $dateformat = $dateinfo->dateformat;
 
-        // If we are previewing this certificate then just show a demonstration date.
         if ($preview) {
             $date = time();
         } else {
-            // Get the page.
             $page = $DB->get_record('customcert_pages', ['id' => $this->get_pageid()], '*', MUST_EXIST);
-            // Get the customcert this page belongs to.
             $customcert = (new certificate_repository())->get_by_template_id_or_fail((int)$page->templateid);
-            // Now we can get the issue for this user.
             $issue = $DB->get_record(
                 'customcert_issues',
                 ['userid' => $user->id, 'customcertid' => $customcert->id],
@@ -196,7 +174,6 @@ class element extends base_element implements
             } else if ($dateitem == self::DATE_CURRENT_DATE) {
                 $date = time();
             } else if ($dateitem == self::DATE_COMPLETION) {
-                // Get the last completion date.
                 $sql = "SELECT MAX(c.timecompleted) as timecompleted
                           FROM {course_completions} c
                          WHERE c.userid = :userid
@@ -207,7 +184,6 @@ class element extends base_element implements
                     }
                 }
             } else if ($dateitem == self::DATE_ENROLMENT_START) {
-                // Get the enrolment start date.
                 $sql = "SELECT ue.timestart FROM {enrol} e JOIN {user_enrolments} ue ON ue.enrolid = e.id
                          WHERE e.courseid = :courseid
                            AND ue.userid = :userid";
@@ -219,7 +195,6 @@ class element extends base_element implements
                     }
                 }
             } else if ($dateitem == self::DATE_ENROLMENT_END) {
-                // Get the enrolment end date.
                 $sql = "SELECT ue.timeend FROM {enrol} e JOIN {user_enrolments} ue ON ue.enrolid = e.id
                          WHERE e.courseid = :courseid
                            AND ue.userid = :userid";
@@ -244,13 +219,15 @@ class element extends base_element implements
                     $grade = element_helper::get_grade_item_info(
                         $gradeitemid,
                         GRADE_DISPLAY_TYPE_DEFAULT,
-                        (int)$user->id
+                        (int)$user->id,
+                        $courseid
                     );
                 } else {
                     $grade = element_helper::get_mod_grade_info(
                         (int)$dateitem,
                         GRADE_DISPLAY_TYPE_DEFAULT,
-                        (int)$user->id
+                        (int)$user->id,
+                        $courseid
                     );
                 }
 
@@ -260,7 +237,6 @@ class element extends base_element implements
             }
         }
 
-        // Ensure that a date has been set.
         if (!empty($date)) {
             $content = element_helper::get_date_format_string((int)$date, (string)$dateformat);
             if ($renderer) {
@@ -272,21 +248,16 @@ class element extends base_element implements
     }
 
     /**
-     * Render the element in html.
-     *
-     * This function is used to render the element when we are using the
-     * drag and drop interface to position it.
+     * Render the element in html for the drag and drop interface.
      *
      * @param element_renderer|null $renderer the renderer service
      * @return string the html
      */
     public function render_html(?element_renderer $renderer = null): string {
-        // If there is no element data, we have nothing to display.
         if (empty($this->get_data())) {
             return '';
         }
 
-        // Read the information stored in the database.
         $payload = $this->get_payload();
         $dateformat = $payload['dateformat'] ?? '';
 
@@ -305,7 +276,6 @@ class element extends base_element implements
      * @return void
      */
     public function prepare_form(MoodleQuickForm $mform): void {
-        // Set the item and format for this element.
         if (!empty($this->get_data())) {
             $payload = $this->get_payload();
 
@@ -320,10 +290,7 @@ class element extends base_element implements
     }
 
     /**
-     * This function is responsible for handling the restoration process of the element.
-     *
-     * We will want to update the course module the date element is pointing to as it will
-     * have changed in the course restore.
+     * Remap the course module or grade item this element points to, as ids change on restore.
      *
      * @param restore_customcert_activity_task $restore
      */

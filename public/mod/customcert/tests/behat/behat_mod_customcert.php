@@ -19,7 +19,7 @@
  *
  * @package   mod_customcert
  * @category  test
- * @copyright 2017 Mark Nelson <markn@moodle.com>
+ * @copyright 2017 Mark Nelson <mdjnelson@gmail.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -32,7 +32,7 @@ require_once(__DIR__ . '/../../../../lib/behat/behat_base.php');
  *
  * @package mod_customcert
  * @category test
- * @copyright 2017 Mark Nelson <markn@moodle.com>
+ * @copyright 2017 Mark Nelson <mdjnelson@gmail.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class behat_mod_customcert extends behat_base {
@@ -161,6 +161,57 @@ class behat_mod_customcert extends behat_base {
     public function i_visit_the_verification_url_for_the_site() {
         $url = new moodle_url('/mod/customcert/verify_certificate.php');
         $this->getSession()->visit($this->locate_path($url->out_as_local_url()));
+    }
+
+    /**
+     * Visits the manage templates page for the template of one certificate, while supplying
+     * the contextid belonging to a different certificate, and asserts that the user is denied
+     * access, since the authorisation must be checked against the template's own context.
+     *
+     * The mismatched tid/contextid combination cannot be produced by following links in the
+     * UI, since every generated link always pairs a template's tid with its own contextid, so
+     * the request is made directly. The resulting permission-denied page is an expected
+     * outcome here rather than a test failure, so it is checked for and navigated away from
+     * within this step, before Moodle's standard post-step check for unexpected error pages
+     * runs.
+     *
+     * phpcs:ignore
+     * @Given /^I should be denied access to the manage templates page for the "(?P<certificate_name>(?:[^"]|\\")*)" certificate using the context of the "(?P<other_certificate_name>(?:[^"]|\\")*)" certificate$/
+     * @param string $certificatename the certificate whose template id (tid) will be used
+     * @param string $othercertificatename the certificate whose context id will be supplied instead
+     */
+    public function i_should_be_denied_access_to_the_manage_templates_page_using_a_mismatched_context(
+        $certificatename,
+        $othercertificatename
+    ) {
+        global $DB;
+
+        $certificate = $DB->get_record('customcert', ['name' => $certificatename], '*', MUST_EXIST);
+        $template = $DB->get_record('customcert_templates', ['id' => $certificate->templateid], '*', MUST_EXIST);
+
+        $othercertificate = $DB->get_record('customcert', ['name' => $othercertificatename], '*', MUST_EXIST);
+        $othertemplate = $DB->get_record('customcert_templates', ['id' => $othercertificate->templateid], '*', MUST_EXIST);
+
+        $url = new moodle_url(
+            '/mod/customcert/manage_templates.php',
+            ['tid' => $template->id, 'contextid' => $othertemplate->contextid]
+        );
+        $this->getSession()->visit($this->locate_path($url->out_as_local_url()));
+
+        $pagetext = $this->getSession()->getPage()->getText();
+        $expected = get_string('nopermissions', 'error', get_string('customcert:manage', 'customcert'));
+        $denied = strpos($pagetext, $expected) !== false;
+
+        // Leave the error page before returning, so it is not treated as an unexpected failure.
+        $this->getSession()->visit($this->locate_path((new moodle_url('/'))->out_as_local_url()));
+
+        if (!$denied) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected the manage templates page to deny access using the mismatched context, ' .
+                    'but it did not. Page text: ' . $pagetext,
+                $this->getSession()
+            );
+        }
     }
 
     /**

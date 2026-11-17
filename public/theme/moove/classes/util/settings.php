@@ -107,6 +107,19 @@ class settings {
             }
         }
 
+        $templatecontext['showwhatsappbutton'] = false;
+        if ($this->enablewhatsappbutton && !empty($templatecontext['whatsapp'])) {
+            $whatsappurl = new \moodle_url('https://api.whatsapp.com/send', ['phone' => $templatecontext['whatsapp']]);
+
+            $whatsappbuttonmessage = $this->whatsappbuttonmessage;
+            if (!empty($whatsappbuttonmessage)) {
+                $whatsappurl->param('text', $whatsappbuttonmessage);
+            }
+
+            $templatecontext['showwhatsappbutton'] = true;
+            $templatecontext['whatsappbuttonurl'] = $whatsappurl->out(false);
+        }
+
         $templatecontext['enablemobilewebservice'] = $CFG->enablemobilewebservice;
 
         if ($CFG->enablemobilewebservice) {
@@ -136,7 +149,6 @@ class settings {
      */
     public function frontpage() {
         return array_merge(
-            $this->frontpage_slideshow(),
             $this->frontpage_marketingboxes(),
             $this->frontpage_numbers(),
             $this->faq()
@@ -150,6 +162,9 @@ class settings {
      */
     public function frontpage_slideshow() {
         $templatecontext['slidercount'] = $this->slidercount;
+        $templatecontext['slideshowlayout'] = $this->slideshowlayout ?: 'classic';
+        $templatecontext['slideshowcolorblockcolor1'] = $this->slideshowcolorblockcolor1 ?: '#0f47ad';
+        $templatecontext['slideshowcolorblockcolor2'] = $this->slideshowcolorblockcolor2 ?: '#17a2b8';
 
         $defaultimage = new \moodle_url('/theme/moove/pix/default_slide.jpg');
         for ($i = 1, $j = 0; $i <= $templatecontext['slidercount']; $i++, $j++) {

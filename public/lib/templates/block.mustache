@@ -52,11 +52,10 @@
     <div class="card-body p-3">
 
         {{! Block header }}
-        <div class="d-flex">
+        <div class="block-header d-flex">
             {{#showtitle}}
                 <h3 id="instance-{{blockinstanceid}}-header" class="h5 card-title">{{{title}}}</h3>
             {{/showtitle}}
-
             {{#hascontrols}}
                 <div class="block-controls header ms-auto">
                     {{{controls}}}

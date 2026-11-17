@@ -25,3 +25,4 @@
 
 $string['pluginname'] = 'Export to XML';
 $string['privacy:metadata'] = 'The Export to xml question bank plugin does not store any personal data.';
+$string['selectedquestions'] = 'Selected questions';

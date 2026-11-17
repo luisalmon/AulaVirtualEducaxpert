@@ -162,6 +162,12 @@ class behat_core_generator extends behat_generator_base {
                 'required' => ['role'],
                 'switchids' => ['role' => 'roleid'],
             ],
+            'personal access tokens' => [
+                'singular' => 'personal access token',
+                'datagenerator' => 'personal_access_token',
+                'required' => ['user', 'name', 'expirytime'],
+                'switchids' => ['user' => 'userid'],
+            ],
             'grade categories' => [
                 'singular' => 'grade category',
                 'datagenerator' => 'grade_category',
@@ -188,7 +194,7 @@ class behat_core_generator extends behat_generator_base {
             'grade outcomes' => [
                 'singular' => 'grade outcome',
                 'datagenerator' => 'grade_outcome',
-                'required' => ['shortname', 'scale'],
+                'required' => ['shortname'],
                 'switchids' => ['course' => 'courseid', 'gradecategory' => 'categoryid', 'scale' => 'scaleid'],
             ],
             'scales' => [
@@ -509,6 +515,22 @@ class behat_core_generator extends behat_generator_base {
         // cause problems since the relevant key names are different.
         // $options is not used in most blocks I have seen, but where it is, it is necessary.
         $this->datagenerator->create_block($data['blockname'], $data, $data);
+    }
+
+    /**
+     * Create a personal access token, minted as the token page does.
+     *
+     * @param array $data The token's owner, name, expiry and optionally space-separated scopes.
+     * @return void
+     */
+    protected function process_personal_access_token(array $data): void {
+        \core\di::get(\core\api\token_manager::class)->issue_token(
+            $data['name'],
+            $data['userid'],
+            explode(' ', $data['scopes'] ?? 'core_grades:grade:read'),
+            null,
+            (int) $data['expirytime'],
+        );
     }
 
     /**

@@ -31,10 +31,10 @@ use ReflectionClass;
  * Unit tests for report base class
  *
  * @package     core_reportbuilder
- * @covers      \core_reportbuilder\local\report\base
  * @copyright   2021 David Matamoros <davidmc@moodle.com>
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core_reportbuilder\local\report\base::class)]
 final class base_test extends advanced_testcase {
 
     /**
@@ -44,6 +44,42 @@ final class base_test extends advanced_testcase {
         global $CFG;
         require_once("{$CFG->dirroot}/reportbuilder/tests/fixtures/system_report_available.php");
         parent::setUpBeforeClass();
+    }
+
+    /**
+     * Test setting report main table
+     */
+    public function test_set_main_table(): void {
+        $this->resetAfterTest();
+
+        $systemreport = system_report_factory::create(system_report_available::class, context_system::instance());
+        $systemreport->set_main_table('user', 'u');
+
+        $this->assertEquals('{user}', $systemreport->get_main_table_sql());
+        $this->assertEquals('u', $systemreport->get_main_table_alias());
+
+        // Backwards compatibility check.
+        $this->assertEquals('user', $systemreport->get_main_table());
+        $this->assertDebuggingCalled(null, DEBUG_DEVELOPER);
+    }
+
+    /**
+     * Test setting report main table SQL
+     */
+    public function test_set_main_table_sql(): void {
+        $this->resetAfterTest();
+
+        $systemreport = system_report_factory::create(system_report_available::class, context_system::instance());
+
+        $tablesql = '(SELECT id, username FROM {user} UNION SELECT 100, \'fred\')';
+        $systemreport->set_main_table_sql($tablesql, 'u');
+
+        $this->assertEquals($tablesql, $systemreport->get_main_table_sql());
+        $this->assertEquals('u', $systemreport->get_main_table_alias());
+
+        // Backwards compatibility check.
+        $this->assertEquals($tablesql, $systemreport->get_main_table());
+        $this->assertDebuggingCalled(null, DEBUG_DEVELOPER);
     }
 
     /**

@@ -20,11 +20,7 @@ namespace mod_customcert\service;
 
 use dml_exception;
 use invalid_parameter_exception;
-use mod_customcert\element\copyable_element_interface;
 use mod_customcert\element\element_interface;
-use mod_customcert\element\legacy_element_adapter;
-use mod_customcert\element as base_element;
-use ReflectionMethod;
 use mod_customcert\event\element_created;
 use mod_customcert\event\page_created;
 use mod_customcert\event\page_deleted;
@@ -48,10 +44,7 @@ use stdClass;
  */
 final class template_service {
     /**
-     * Create a template_service with default dependencies.
-     *
-     * Use this instead of new template_service() when you do not need to inject
-     * custom dependencies (e.g. in production code and integration tests).
+     * Create a template service with default dependencies.
      *
      * @return self
      */
@@ -98,36 +91,7 @@ final class template_service {
      * @return element_interface|null
      */
     private function create_element_from_record(stdClass $record): ?element_interface {
-        return $this->factory->create_from_legacy_record($record);
-    }
-
-    /**
-     * Returns true only when the given element instance has a concrete override of copy_element()
-     * that is not merely the no-op base implementation on mod_customcert\element.
-     *
-     * @param object $element Element instance to inspect.
-     * @return bool
-     */
-    private function has_legacy_copy_override(object $element): bool {
-        if (!method_exists($element, 'copy_element')) {
-            return false;
-        }
-        $ref = new ReflectionMethod($element, 'copy_element');
-        return $ref->getDeclaringClass()->getName() !== base_element::class;
-    }
-
-    /**
-     * Unwrap legacy adapters to their inner instance when required.
-     *
-     * @param element_interface $element
-     * @return object
-     */
-    private function unwrap_element(element_interface $element): object {
-        if ($element instanceof legacy_element_adapter) {
-            return $element->get_inner();
-        }
-
-        return $element;
+        return $this->factory->create_from_record($record);
     }
 
     /**
@@ -176,7 +140,7 @@ final class template_service {
         $pages = $this->pages->list_by_template($template->get_id());
         $nextsequence = 1;
         if (!empty($pages)) {
-            $last = end($pages); // The method list_by_template returns sequence ASC, id ASC.
+            $last = end($pages);
             $nextsequence = ((int)$last->sequence) + 1;
         }
         $pageid = $this->pages->create((object) [
@@ -314,7 +278,6 @@ final class template_service {
 
         page_deleted::create_from_page($page, $template)->trigger();
 
-        // Resequence remaining pages.
         $this->pages->resequence($template->get_id());
 
         if ($triggertemplateupdatedevent) {
@@ -331,8 +294,6 @@ final class template_service {
      * @throws dml_exception
      */
     public function delete_element(template $template, int $elementid): void {
-        global $DB;
-
         $element = $this->elements->get_by_id_or_fail($elementid);
 
         $page = $this->pages->get_by_id_or_fail((int)$element->pageid);
@@ -349,15 +310,10 @@ final class template_service {
                 "deleting record directly without firing element_deleted event.",
                 DEBUG_DEVELOPER
             );
-            $DB->delete_records('customcert_elements', ['id' => $elementid]);
+            $this->elements->delete_by_id($elementid);
         }
 
-        // Resequence remaining elements.
-        $sql = "UPDATE {customcert_elements}
-                   SET sequence = sequence - 1
-                 WHERE pageid = :pageid
-                   AND sequence > :sequence";
-        $DB->execute($sql, ['pageid' => $element->pageid, 'sequence' => $element->sequence]);
+        $this->elements->resequence_after_delete((int)$element->pageid, (int)$element->sequence);
 
         template_updated::create_from_template($template)->trigger();
     }
@@ -395,36 +351,7 @@ final class template_service {
             page_created::create_from_page($newpage, $target)->trigger();
 
             foreach ($this->elements->list_by_page((int)$sourcepage->id) as $templateelement) {
-                $element = clone($templateelement);
-                $element->pageid = $newpage->id;
-                $element->timecreated = $now;
-                $element->timemodified = $now;
-                unset($element->id);
-
-                $newid = $DB->insert_record('customcert_elements', $element);
-                $element->id = $newid;
-
-                if ($instance = $this->create_element_from_record($element)) {
-                    $inner = $this->unwrap_element($instance);
-                    // If the element implements copyable_element_interface, delegate to copy_from().
-                    if ($inner instanceof copyable_element_interface) {
-                        if (!$inner->copy_from($templateelement)) {
-                            $this->elements->delete($instance);
-                            continue;
-                        }
-                    } else if ($this->has_legacy_copy_override($inner)) {
-                        // Legacy compatibility: invoke deprecated copy_element() for old third-party elements.
-                        debugging(
-                            'copy_element() is deprecated since Moodle 5.2. '
-                            . 'Implement mod_customcert\\element\\copyable_element_interface::copy_from() instead.',
-                            DEBUG_DEVELOPER
-                        );
-                        $copyresult = $inner->copy_element($templateelement);
-                        if ($copyresult === false) {
-                            $this->elements->delete($instance);
-                            continue;
-                        }
-                    }
+                if ($instance = $this->elements->copy_element($templateelement, (int)$newpage->id)) {
                     element_created::create_from_element($instance)->trigger();
                 }
             }
@@ -451,7 +378,6 @@ final class template_service {
     public function move_item(template $template, string $itemname, int $itemid, string $direction): void {
         $this->moves->move_item($template, $itemname, $itemid, $direction);
     }
-
 
     /**
      * Determine if a page has been updated based on form data.

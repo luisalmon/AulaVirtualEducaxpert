@@ -13,7 +13,6 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
-
 /**
  * Course related unit tests
  *
@@ -22,6 +21,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 #[\PHPUnit\Framework\Attributes\CoversClass(core_courseformat\base::class)]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_return_options')]
 final class base_test extends advanced_testcase {
 
     /**
@@ -198,6 +198,26 @@ final class base_test extends advanced_testcase {
     }
 
     /**
+     * Test for get_return_options().
+     */
+    public function test_get_return_options(): void {
+        $this->resetAfterTest();
+
+        // Generate a course.
+        $course = $this->getDataGenerator()->create_course(['numsections' => 1]);
+        $format = course_get_format($course);
+        $sections = $format->get_sections();
+
+        // Test for when on course main page.
+        $format->set_sectionid(null);
+        $this->assertEquals(0, $format->get_return_options($sections[1])['pagesectionid']);
+
+        // Test for when on section page.
+        $format->set_sectionid($sections[1]->id);
+        $this->assertEquals($sections[1]->id, $format->get_return_options($sections[1])['pagesectionid']);
+    }
+
+    /**
      * Test for get_view_url().
      */
     public function test_get_view_url(): void {
@@ -213,6 +233,7 @@ final class base_test extends advanced_testcase {
         $data = (object)['id' => $course1->id];
         $format = course_get_format($course1);
         $format->update_course_format_options($data);
+        $sections = $format->get_sections();
 
         // In page.
         $this->assertNotEmpty($format->get_view_url(null));
@@ -224,11 +245,25 @@ final class base_test extends advanced_testcase {
         $this->assertStringContainsString('course/view.php', $format->get_view_url(1));
         $this->assertStringContainsString('course/section.php', $format->get_view_url(0, ['navigation' => 1]));
         $this->assertStringContainsString('course/section.php', $format->get_view_url(1, ['navigation' => 1]));
-        // When sr parameter is defined, the section.php page should be returned.
-        $this->assertStringContainsString('course/section.php', $format->get_view_url(0, ['sr' => 1]));
-        $this->assertStringContainsString('course/section.php', $format->get_view_url(1, ['sr' => 1]));
-        $this->assertStringContainsString('course/section.php', $format->get_view_url(0, ['sr' => 0]));
-        $this->assertStringContainsString('course/section.php', $format->get_view_url(1, ['sr' => 0]));
+        // When pagesectionid option is defined, the section.php page should be returned.
+        $format->set_sectionid($sections[1]->id);
+        $this->assertStringContainsString(
+            'course/section.php',
+            $format->get_view_url(0, $format->get_return_options($sections[0]))
+        );
+        $this->assertStringContainsString(
+            'course/section.php',
+            $format->get_view_url(1, $format->get_return_options($sections[1]))
+        );
+        $format->set_sectionid($sections[0]->id);
+        $this->assertStringContainsString(
+            'course/section.php',
+            $format->get_view_url(0, $format->get_return_options($sections[0]))
+        );
+        $this->assertStringContainsString(
+            'course/section.php',
+            $format->get_view_url(1, $format->get_return_options($sections[1]))
+        );
 
         // Expand section.
         // The current course format $format uses the format 'testformat' which does not use sections.

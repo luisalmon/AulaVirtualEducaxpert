@@ -19,7 +19,7 @@
  *
  * @package   mod_customcert
  * @category  task
- * @copyright 2017 Mark Nelson <markn@moodle.com>
+ * @copyright 2017 Mark Nelson <mdjnelson@gmail.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -31,6 +31,15 @@ $tasks = [
         'blocking' => 0,
         'minute' => '*',
         'hour' => '*',
+        'day' => '*',
+        'month' => '*',
+        'dayofweek' => '*',
+    ],
+    [
+        'classname' => 'mod_customcert\task\cleanup_site_certificates_downloads_task',
+        'blocking' => 0,
+        'minute' => '0',
+        'hour' => '3',
         'day' => '*',
         'month' => '*',
         'dayofweek' => '*',

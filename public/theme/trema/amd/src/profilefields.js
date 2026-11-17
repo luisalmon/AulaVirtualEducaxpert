@@ -65,23 +65,20 @@ define(['jquery', 'core/str', 'core/notification'], function($, Str, Notificatio
         // Process each profile field that is required.
         fields.forEach(function(field) {
             var fieldId = 'id_profile_field_' + field;
-            var field = $('#' + fieldId);
+            var fieldElement = $('#' + fieldId);
 
-            if (field.length > 0) {
-                var formGroup = field.closest('.form-group');
-                if (formGroup.length === 0) {
-                    formGroup = field.closest('.fitem');
-                }
+            if (fieldElement.length > 0) {
+                var formGroup = fieldElement.closest('.fitem');
 
                 // Find the parent category/section for this field
-                var category = field.closest('fieldset.collapsible');
+                var category = fieldElement.closest('fieldset.collapsible');
                 if (category.length > 0 && categoriesToExpand.indexOf(category.attr('id')) === -1) {
                     categoriesToExpand.push(category.attr('id'));
                 }
 
-                field.attr('required', 'required');
+                fieldElement.attr('required', 'required');
 
-                field.attr('aria-required', 'true');
+                fieldElement.attr('aria-required', 'true');
 
                 var labelCol = formGroup.find('.col-form-label');
                 var labelAddon = labelCol.find('.form-label-addon');
@@ -109,8 +106,8 @@ define(['jquery', 'core/str', 'core/notification'], function($, Str, Notificatio
                     felement.append(errorContainer);
                 }
 
-                field.on('blur', function() {
-                    validateField(field, requiredString);
+                fieldElement.on('blur', function() {
+                    validateField(fieldElement, requiredString);
                 });
 
                 if (!form.data('validation-added')) {
@@ -128,14 +125,8 @@ define(['jquery', 'core/str', 'core/notification'], function($, Str, Notificatio
                         });
 
                         if (!isValid) {
+                            // The errors are then shown by theme_trema/formerrors.
                             e.preventDefault();
-                            // Scroll to the first invalid field
-                            var firstInvalidField = $('.form-group.has-danger').first();
-                            if (firstInvalidField.length > 0) {
-                                $('html, body').animate({
-                                    scrollTop: firstInvalidField.offset().top - 100
-                                }, 200);
-                            }
                         }
                     });
 
@@ -172,7 +163,7 @@ define(['jquery', 'core/str', 'core/notification'], function($, Str, Notificatio
      */
     var validateField = function(field, requiredString) {
         var fieldId = field.attr('id');
-        var formGroup = field.closest('.form-group');
+        var formGroup = field.closest('.fitem');
         var errorContainer = $('#' + fieldId + '_error');
 
         // Get the field value, handling different input types

@@ -38,6 +38,8 @@ Feature: Using the help popover
     And I click on "Timing" "link"
     When I click on "#fitem_id_timelimit .help-icon" "css_element"
     Then ".help-popover a[href*='/mod/quiz/timing'][target='_blank']" "css_element" should be visible
+    And ".help-popover[role='dialog'][aria-label='Help']" "css_element" should be visible
+    And "#fitem_id_timelimit .help-icon[aria-haspopup='dialog']" "css_element" should be visible
     And I press the tab key
     Then the focused element is "More help" "link"
     And "More help" "link" should be visible

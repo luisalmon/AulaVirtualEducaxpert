@@ -18,7 +18,7 @@
  * Contains the mobile output class for the custom certificate.
  *
  * @package   mod_customcert
- * @copyright 2018 Mark Nelson <markn@moodle.com>
+ * @copyright 2018 Mark Nelson <mdjnelson@gmail.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -27,7 +27,6 @@ namespace mod_customcert\output;
 use context;
 use context_module;
 use core_external\util;
-use mod_customcert\certificate;
 use mod_customcert\service\issue_repository;
 use mod_customcert\service\certificate_time_service;
 use moodle_url;
@@ -36,7 +35,7 @@ use stdClass;
 /**
  * Mobile output class for the custom certificate.
  *
- * @copyright  2018 Mark Nelson <markn@moodle.com>
+ * @copyright  2018 Mark Nelson <mdjnelson@gmail.com>
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class mobile {
@@ -60,7 +59,6 @@ class mobile {
         $context = context_module::instance($cm->id);
         self::require_capability($cm, $context, 'mod/customcert:view');
 
-        // Set some variables we are going to be using.
         $certificate = $DB->get_record('customcert', ['id' => $cm->instance], '*', MUST_EXIST);
         $certificate->name = format_string($certificate->name);
         [$certificate->intro, $certificate->introformat] = util::format_text(
@@ -71,7 +69,6 @@ class mobile {
             'intro'
         );
 
-        // Get any issues this person may have.
         $issue = false;
         if (
             $issues = $DB->get_records(

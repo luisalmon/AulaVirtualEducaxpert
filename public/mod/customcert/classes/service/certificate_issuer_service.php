@@ -17,11 +17,9 @@
 namespace mod_customcert\service;
 
 use core\task\manager;
-use mod_customcert\certificate;
 use mod_customcert\task\email_certificate_task;
 use context_module;
 use core_availability\info_module;
-use completion_info;
 use mod_customcert\service\certificate_time_service;
 
 /**
@@ -78,11 +76,7 @@ final class certificate_issuer_service {
     }
 
     /**
-     * List eligible users for emailing for a single certificate.
-     *
-     * A single-certificate entry point to the same candidate-eligibility rules used by the batch
-     * cron path (process_email_issuance_run()); not called by it, since batch processing loads
-     * its certificate list via certificate_repository::list_for_issuance_run() instead.
+     * List email candidates for one certificate using the same eligibility rules as batch issuance.
      *
      * @param int $customcertid
      * @return array keyed by userid
@@ -172,7 +166,6 @@ final class certificate_issuer_service {
      * @return void
      */
     public function process_email_issuance_run(): void {
-        // Get the certificatesperrun, includeinnotvisiblecourses, and certificateexecutionperiod configurations.
         $certificatesperrun = (int)get_config('customcert', 'certificatesperrun');
         $includeinnotvisiblecourses = (bool)get_config('customcert', 'includeinnotvisiblecourses');
         $certificateexecutionperiod = (int)get_config('customcert', 'certificateexecutionperiod');
@@ -192,7 +185,6 @@ final class certificate_issuer_service {
         }
 
         foreach ($customcerts as $customcert) {
-            // Check if the certificate is hidden, quit early.
             [, $cm] = get_course_and_cm_from_instance($customcert->id, 'customcert', $customcert->course);
             if (!$cm->visible) {
                 continue;
@@ -205,12 +197,12 @@ final class certificate_issuer_service {
 
             $candidates = $this->get_email_candidates_for_customcert($customcert, $cm);
 
+            // Auto-issue only for "Email students", or when this certificate's own "Issue
+            // certificates automatically" setting is enabled (#672, #904).
+            $autoissue = !empty($customcert->emailstudents) || !empty($customcert->issueautomatically);
+
             foreach ($candidates as $filtereduser) {
-                // Only proactively issue a certificate on the student's behalf when emailstudents is
-                // enabled. Otherwise (e.g. only emailteachers/emailothers is set), we must not manufacture
-                // a certificate for a student who hasn't triggered issuance themselves (e.g. by viewing
-                // it) -- we can only notify about certificates that already exist.
-                $issue = !empty($customcert->emailstudents)
+                $issue = $autoissue
                     ? $this->issue_if_needed((int)$customcert->id, (int)$filtereduser->id)
                     : $this->find_existing_issue((int)$customcert->id, (int)$filtereduser->id);
 
@@ -273,7 +265,8 @@ final class certificate_issuer_service {
     }
 
     /**
-     * Build the list of eligible users for a certificate within a CM context.
+     * Find issuance candidates using capability, availability, suspension, completion and required time.
+     * Report visibility rules in issue_repository do not determine issuance eligibility.
      *
      * @param object $customcert
      * @param object $cm
@@ -284,14 +277,16 @@ final class certificate_issuer_service {
         // enabled, only studentemailed = 0 remains a retry candidate.
         $issuedusers = $this->issues->list_emailed_users((int)$customcert->id, !empty($customcert->emailstudents));
 
-        // Get the context of the Custom Certificate module.
         $cmcontext = context_module::instance($cm->id);
 
-        // Get users with the mod/customcert:receiveissue capability in the Custom Certificate module context.
-        $userswithissue = get_users_by_capability($cmcontext, 'mod/customcert:receiveissue');
-        // Get users with mod/customcert:view capability.
+        // Outside the site home, only actively enrolled users are eligible, so a capability granted
+        // at system level does not issue certificates to users who are not in the course.
+        if ((int)$customcert->courseid === SITEID) {
+            $userswithissue = get_users_by_capability($cmcontext, 'mod/customcert:receiveissue');
+        } else {
+            $userswithissue = get_enrolled_users($cmcontext, 'mod/customcert:receiveissue', 0, 'u.*', null, 0, 0, true);
+        }
         $userswithview = get_users_by_capability($cmcontext, 'mod/customcert:view');
-        // Users with both mod/customcert:view and mod/customcert:receiveissue capabilities.
         $userswithissueview = array_intersect_key($userswithissue, $userswithview);
 
         // Filter remaining users by availability conditions.
@@ -300,7 +295,6 @@ final class certificate_issuer_service {
 
         $candidates = [];
         $timeservice = certificate_time_service::create();
-        $completion = new completion_info(get_course((int)$customcert->courseid));
 
         foreach ($filteredusers as $filtereduser) {
             // Do not issue certs to suspended users.
@@ -318,21 +312,13 @@ final class certificate_issuer_service {
                 continue;
             }
 
-            // Check whether the CM is visible to this user.
+            // Check the CM is visible and genuinely available, as uservisible alone is true for users
+            // who can ignore availability restrictions (e.g. admins and managers).
             $usercm = get_fast_modinfo($customcert->courseid, $filtereduser->id)->instances['customcert'][$customcert->id];
-            if (!$usercm->uservisible) {
+            if (!$usercm->uservisible || !$usercm->available) {
                 continue;
             }
 
-            // Skip users who have not yet met completion conditions configured on the certificate itself.
-            if (
-                $completion->is_enabled($usercm) &&
-                !$this->has_met_own_completion($completion, $usercm, (int)$filtereduser->id)
-            ) {
-                continue;
-            }
-
-            // Check required time (if any).
             if (!empty($customcert->requiredtime)) {
                 if (
                     $timeservice->get_course_time(
@@ -348,40 +334,5 @@ final class certificate_issuer_service {
         }
 
         return $candidates;
-    }
-
-    /**
-     * Check whether a user has met the completion conditions configured on the certificate cm itself.
-     *
-     * This is distinct from availability/restrict access, which is already enforced via uservisible.
-     * Activity completion tracking is only ever consulted by other activities' restrict access rules
-     * unless we check it explicitly here, so a certificate configured with completion conditions but no
-     * restrict access rule would otherwise be issued/emailed regardless of the user's completion state.
-     *
-     * Automatic tracking excludes the completionemailed custom rule to avoid a circular
-     * dependency (it would need to already be emailed to become eligible to be emailed); manual
-     * tracking uses the saved completion state directly.
-     *
-     * @param completion_info $completion
-     * @param object $cm
-     * @param int $userid
-     * @return bool
-     */
-    private function has_met_own_completion(completion_info $completion, object $cm, int $userid): bool {
-        if ($cm->completion == COMPLETION_TRACKING_MANUAL) {
-            $data = $completion->get_data($cm, false, $userid);
-
-            return in_array((int)$data->completionstate, [COMPLETION_COMPLETE, COMPLETION_COMPLETE_PASS], true);
-        }
-
-        $completionstate = $completion->get_core_completion_state($cm, $userid);
-
-        foreach ($completionstate as $state) {
-            if (!in_array((int)$state, [COMPLETION_COMPLETE, COMPLETION_COMPLETE_PASS], true)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 }

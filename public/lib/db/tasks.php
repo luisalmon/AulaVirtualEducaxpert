@@ -221,6 +221,15 @@ $tasks = array(
         'dayofweek' => 'R',
         'month' => '*'
     ),
+    [
+        'classname' => 'core\task\registration_reporting_check_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => 'R',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+    ],
     array(
         'classname' => 'core\task\check_for_updates_task',
         'blocking' => 0,
@@ -356,6 +365,15 @@ $tasks = array(
         'dayofweek' => '*',
         'month' => '*'
     ),
+    [
+        'classname' => \core\task\personal_access_token_expiry_task::class,
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => '3',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+    ],
     array(
         'classname' => 'core\task\analytics_cleanup_task',
         'blocking' => 0,
@@ -496,4 +514,22 @@ $tasks = array(
         'month' => '*',
         'disabled' => false,
     ],
+    [
+        'classname' => 'core\task\send_oauth2_secret_expiry_notifications_task',
+        'blocking' => 0,
+        'minute' => 'R',
+        'hour' => '01',
+        'day' => '*',
+        'month' => '*',
+        'dayofweek' => '*',
+    ],
+    [
+        'classname' => \core\task\process_expired_oauth2_secrets_task::class,
+        'blocking'  => 0,
+        'minute'    => 'R',
+        'hour'      => '*',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+    ]
 );

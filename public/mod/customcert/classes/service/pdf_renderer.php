@@ -19,8 +19,7 @@
  *
  * Implements {@see element_renderer} to render elements into a TCPDF context.
  * Elements that implement {@see mod_customcert\element\renderable_element_interface}
- * can delegate their PDF rendering via {@see render()}, while legacy elements
- * are supported through the {@see mod_customcert\element\legacy_element_adapter}.
+ * can delegate their PDF rendering via {@see render()}.
  *
  * @package    mod_customcert
  * @copyright  2025 Mark Nelson <mdjnelson@gmail.com>
@@ -87,6 +86,8 @@ final class pdf_renderer implements element_renderer {
 
     /**
      * Render HTML.
+     *
+     * Intentionally returns an empty string: HTML output is only produced by html_renderer.
      *
      * @param renderable_element_interface $element
      * @return string

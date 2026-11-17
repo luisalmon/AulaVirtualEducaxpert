@@ -33,6 +33,7 @@ use \core_privacy\local\request\writer;
 use \core_privacy\local\request\contextlist;
 use \mod_assign\privacy\assign_plugin_request_data;
 use \mod_assign\privacy\useridlist;
+use stdClass;
 
 /**
  * Privacy class for requesting user data.
@@ -101,32 +102,69 @@ class provider implements
      * information to help with exporting.
      */
     public static function export_feedback_user_data(assign_plugin_request_data $exportdata) {
+        global $DB;
+
         // Get that comment information and jam it into that exporter.
         $assign = $exportdata->get_assign();
-        $plugin = $assign->get_plugin_by_type('assignfeedback', 'comments');
         $gradeid = $exportdata->get_pluginobject()->id;
-        $comments = $plugin->get_feedback_comments($gradeid);
-        if ($comments && !empty($comments->commenttext)) {
-            $currentpath = array_merge(
-                $exportdata->get_subcontext(),
-                [get_string('privacy:commentpath', 'assignfeedback_comments')]
-            );
+        if ($exportdata->get_user()) {
+            // A user is only set when exporting on behalf of a teacher (it does not identify which teacher).
+            // Include every stored comment for the grade, even those retained from markers who are no longer allocated.
+            $comments = $DB->get_records('assignfeedback_comments', ['grade' => $gradeid]);
+        } else {
+            // Exporting the student's own data: only include feedback from the currently allocated markers, as shown to them.
+            $plugin = $assign->get_plugin_by_type('assignfeedback', 'comments');
+            $comments = $plugin->get_all_feedback_comments($gradeid);
+        }
+        $markids = [];
+        $data = new stdClass();
+        $currentpath = array_merge(
+            $exportdata->get_subcontext(),
+            [get_string('privacy:commentpath', 'assignfeedback_comments')]
+        );
+        foreach ($comments as $comment) {
+            if (!empty($comment->commenttext)) {
+                if (is_null($comment->mark)) {
+                    $filearea = ASSIGNFEEDBACK_COMMENTS_FILEAREA;
+                    $itemid = $comment->grade;
+                    $prop = 'commenttext';
+                } else {
+                    $filearea = ASSIGNFEEDBACK_COMMENTS_FILEAREA_MARKER;
+                    $itemid = $comment->mark;
+                    $prop = 'commenttext_mark_' . $comment->mark;
+                    $markids[] = $comment->mark;
+                }
 
-            $comments->commenttext = writer::with_context($assign->get_context())->rewrite_pluginfile_urls(
+                $comment->commenttext = writer::with_context($assign->get_context())->rewrite_pluginfile_urls(
+                    $currentpath,
+                    ASSIGNFEEDBACK_COMMENTS_COMPONENT,
+                    $filearea,
+                    $itemid,
+                    $comment->commenttext
+                );
+
+                $data->$prop = format_text(
+                    $comment->commenttext,
+                    $comment->commentformat,
+                    ['context' => $exportdata->get_context()]
+                );
+            }
+        }
+
+        writer::with_context($exportdata->get_context())->export_data($currentpath, $data);
+        writer::with_context($exportdata->get_context())->export_area_files(
+            $currentpath,
+            ASSIGNFEEDBACK_COMMENTS_COMPONENT,
+            ASSIGNFEEDBACK_COMMENTS_FILEAREA,
+            $gradeid
+        );
+        foreach ($markids as $markid) {
+            writer::with_context($exportdata->get_context())->export_area_files(
                 $currentpath,
                 ASSIGNFEEDBACK_COMMENTS_COMPONENT,
-                ASSIGNFEEDBACK_COMMENTS_FILEAREA,
-                $gradeid,
-                $comments->commenttext
+                ASSIGNFEEDBACK_COMMENTS_FILEAREA_MARKER,
+                $markid
             );
-            $data = (object)
-            [
-                'commenttext' => format_text($comments->commenttext, $comments->commentformat,
-                    ['context' => $exportdata->get_context()])
-            ];
-            writer::with_context($exportdata->get_context())->export_data($currentpath, $data);
-            writer::with_context($exportdata->get_context())->export_area_files($currentpath,
-                ASSIGNFEEDBACK_COMMENTS_COMPONENT, ASSIGNFEEDBACK_COMMENTS_FILEAREA, $gradeid);
         }
     }
 
@@ -138,9 +176,16 @@ class provider implements
     public static function delete_feedback_for_context(assign_plugin_request_data $requestdata) {
         $assign = $requestdata->get_assign();
         $fs = get_file_storage();
-        $fs->delete_area_files($requestdata->get_context()->id, ASSIGNFEEDBACK_COMMENTS_COMPONENT,
-            ASSIGNFEEDBACK_COMMENTS_FILEAREA);
-
+        $fs->delete_area_files(
+            $requestdata->get_context()->id,
+            ASSIGNFEEDBACK_COMMENTS_COMPONENT,
+            ASSIGNFEEDBACK_COMMENTS_FILEAREA
+        );
+        $fs->delete_area_files(
+            $requestdata->get_context()->id,
+            ASSIGNFEEDBACK_COMMENTS_COMPONENT,
+            ASSIGNFEEDBACK_COMMENTS_FILEAREA_MARKER
+        );
         $plugin = $assign->get_plugin_by_type('assignfeedback', 'comments');
         $plugin->delete_instance();
     }

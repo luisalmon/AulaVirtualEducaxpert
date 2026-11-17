@@ -1,6 +1,6 @@
 # assignfeedback_editpdf Upgrade notes
 
-## 5.2.2
+## 5.3
 
 ### Fixed
 

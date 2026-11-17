@@ -18,7 +18,7 @@
  * This file contains the form for handling editing a customcert element.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -52,7 +52,7 @@ MoodleQuickForm::registerElementType(
  * The form for handling editing a customcert element.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class edit_element_form extends moodleform {
@@ -88,7 +88,7 @@ class edit_element_form extends moodleform {
         $mform->addHelpButton('name', 'elementname', 'customcert');
 
         $factory = $this->_customdata['factory'] ?? element_factory::build_with_defaults();
-        $created = $factory->create_from_legacy_record($element);
+        $created = $factory->create_from_record($element);
         if (!$created) {
             throw new moodle_exception('invalidrecord', 'error');
         }
@@ -153,6 +153,37 @@ class edit_element_form extends moodleform {
         // for these operations — after set_data() has been called.
         $formservice = new form_service();
         $formservice->prepare_after_data($mform, $this->element);
+    }
+
+    /**
+     * Returns the names of the password inputs on this form.
+     *
+     * Stored values for these inputs are never valid replacement input, so callers
+     * replaying stored data into a submission must leave them out.
+     *
+     * @return string[]
+     */
+    public function get_password_field_names(): array {
+        return self::collect_password_names($this->_form->_elements);
+    }
+
+    /**
+     * Collects the names of password inputs, descending into groups.
+     *
+     * @param array $elements Form elements.
+     * @return string[]
+     */
+    private static function collect_password_names(array $elements): array {
+        $names = [];
+        foreach ($elements as $formelement) {
+            if ($formelement instanceof \HTML_QuickForm_group) {
+                $names = array_merge($names, self::collect_password_names($formelement->getElements()));
+            } else if ($formelement instanceof \MoodleQuickForm_password) {
+                $names[] = $formelement->getName();
+            }
+        }
+
+        return $names;
     }
 
     /**

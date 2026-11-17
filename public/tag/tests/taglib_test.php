@@ -28,8 +28,8 @@ use core_tag;
  * @category test
  * @copyright 2014 Mark Nelson <markn@moodle.com>
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers \core_tag_tag
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core_tag_tag::class)]
 final class taglib_test extends \advanced_testcase {
 
     /**
@@ -2025,7 +2025,7 @@ final class taglib_test extends \advanced_testcase {
 
         // Get the tagged users.
         $tag = core_tag_tag::get($tag->id, '*');
-        $taggedusers = user_get_tagged_users($tag);
+        $taggedusers = \core\user::get_tagged_users($tag);
 
         // Ensure it has content.
         $this->assertEquals(1, $taggedusers->hascontent);
@@ -2046,7 +2046,7 @@ final class taglib_test extends \advanced_testcase {
         }
 
         // First page should have 5 users and the "more" link is visible (not null).
-        $taggedusers = user_get_tagged_users(
+        $taggedusers = \core\user::get_tagged_users(
             tag: $tag,
             page: 0,
         );
@@ -2054,7 +2054,7 @@ final class taglib_test extends \advanced_testcase {
         $this->assertEquals(5, $this->count_html_elements($taggedusers->content, 'li'));
 
         // Second page should have 1 user and the "more" link is hidden (null).
-        $taggedusers = user_get_tagged_users(
+        $taggedusers = \core\user::get_tagged_users(
             tag: $tag,
             page: 1,
         );

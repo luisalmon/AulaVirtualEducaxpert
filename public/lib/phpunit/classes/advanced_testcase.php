@@ -736,6 +736,23 @@ abstract class advanced_testcase extends base_testcase {
     }
 
     /**
+     * Mock the clock with a frozen clock set to a specific datetime.
+     *
+     * @param \DateTimeImmutable $datetime
+     * @return \frozen_clock
+     */
+    public function mock_clock_with_frozen_datetime(
+        \DateTimeImmutable $datetime,
+    ): \frozen_clock {
+        require_once(dirname(__DIR__, 2) . '/testing/classes/frozen_clock.php');
+        $clock = new \frozen_clock(datetime: $datetime);
+
+        \core\di::set(\core\clock::class, $clock);
+
+        return $clock;
+    }
+
+    /**
      * Add a mocked plugintype to Moodle.
      *
      * A new plugintype name must be provided with a path to the plugintype's root.
@@ -839,5 +856,19 @@ abstract class advanced_testcase extends base_testcase {
         $CFG->config_php_settings['customstringmanager'] = \core\tests\mocking_string_manager::class;
 
         return get_string_manager(true);
+    }
+
+    /**
+     * Get a testable CLI Command.
+     *
+     * @param string $commandname
+     * @return \Symfony\Component\Console\Tester\CommandTester
+     */
+    protected function get_testable_command(
+        string $commandname,
+    ): \Symfony\Component\Console\Tester\CommandTester {
+        return new \Symfony\Component\Console\Tester\CommandTester(
+            di::get(\core\cli\application::class)->find($commandname),
+        );
     }
 }

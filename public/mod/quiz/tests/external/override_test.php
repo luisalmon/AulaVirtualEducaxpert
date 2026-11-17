@@ -22,10 +22,10 @@ namespace mod_quiz\external;
  * @package   mod_quiz
  * @copyright 2024 Matthew Hilton <matthewhilton@catalyst-au.net>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers \mod_quiz\external\get_overrides
- * @covers \mod_quiz\external\save_overrides
- * @covers \mod_quiz\external\delete_overrides
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_quiz\external\get_overrides::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_quiz\external\save_overrides::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_quiz\external\delete_overrides::class)]
 final class override_test extends \core_external\tests\externallib_testcase {
     /**
      * Creates a quiz for testing.
@@ -59,8 +59,8 @@ final class override_test extends \core_external\tests\externallib_testcase {
      *
      * @param int|string $quizid
      * @param string $expectedexception
-     * @dataProvider get_override_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('get_override_provider')]
     public function test_get_overrides(int|string $quizid, string $expectedexception = ''): void {
         global $DB;
 
@@ -106,7 +106,7 @@ final class override_test extends \core_external\tests\externallib_testcase {
             ],
             'good update' => [
                 'data' => [
-                    'timeopen' => 999,
+                    'duedate' => 999,
                 ],
             ],
             'bad update' => [
@@ -122,10 +122,10 @@ final class override_test extends \core_external\tests\externallib_testcase {
     /**
      * Tests save_overrides
      *
-     * @dataProvider save_overrides_provider
      * @param array $data
      * @param string $expectedexception
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('save_overrides_provider')]
     public function test_save_overrides(array $data, string $expectedexception = ''): void {
         global $DB;
 
@@ -185,10 +185,10 @@ final class override_test extends \core_external\tests\externallib_testcase {
     /**
      * Tests delete_overrides
      *
-     * @dataProvider delete_overrides_provider
      * @param int|string $id
      * @param string $expectedexception
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('delete_overrides_provider')]
     public function test_delete_overrides(int|string $id, string $expectedexception = ''): void {
         global $DB;
 
@@ -295,12 +295,12 @@ final class override_test extends \core_external\tests\externallib_testcase {
     /**
      * Tests save_overrides with reason
      *
-     * @dataProvider save_reason_overrides_provider
      * @param array $data
      * @param string|null $expectedreason
      * @param int|string|null $expectedformat
      * @param string|null $expectedexception
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('save_reason_overrides_provider')]
     public function test_save_reason_overrides(
         array $data,
         ?string $expectedreason,
@@ -421,7 +421,6 @@ final class override_test extends \core_external\tests\externallib_testcase {
     /**
      * Tests update_overrides with reason
      *
-     * @dataProvider update_reason_overrides_provider
      * @param string|null $initialreason
      * @param int|string|null $initialformat
      * @param array $data
@@ -429,6 +428,7 @@ final class override_test extends \core_external\tests\externallib_testcase {
      * @param int|string|null $expectedformat
      * @param string|null $expectedexception
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('update_reason_overrides_provider')]
     public function test_update_reason_overrides(
         ?string $initialreason,
         int|string|null $initialformat,
@@ -476,5 +476,46 @@ final class override_test extends \core_external\tests\externallib_testcase {
         $override = $DB->get_record('quiz_overrides', ['id' => $overrideid]);
         $this->assertEquals($expectedreason, $override->reason);
         $this->assertEquals($expectedformat, $override->reasonformat);
+    }
+
+    /**
+     * Test overridden due date can be set and retrieved correctly.
+     */
+    public function test_overridden_due_date(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $quiz = $this->create_quiz();
+        $user = $this->getDataGenerator()->create_user();
+
+        $payload = [
+            'quizid' => $quiz->id,
+            'overrides' => [
+                [
+                    'userid' => $user->id,
+                    'duedate' => 999,
+                ],
+            ],
+        ];
+
+        $this->assertEmpty($DB->get_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $user->id]));
+
+        // Add a new overridden due date.
+        save_overrides::execute($payload);
+        $record = $DB->get_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $user->id]);
+        $result = get_overrides::execute($quiz->id);
+        $this->assertEquals(999, $record->duedate);
+        $this->assertEquals(999, $result['overrides'][$record->id]->duedate);
+
+        // Update overridden due date.
+        $payload['overrides'][0]['id'] = $record->id;
+        $payload['overrides'][0]['duedate'] = 1000;
+        save_overrides::execute($payload);
+        $record = $DB->get_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $user->id]);
+        $result = get_overrides::execute($quiz->id);
+        $this->assertEquals(1000, $record->duedate);
+        $this->assertEquals(1000, $result['overrides'][$record->id]->duedate);
     }
 }

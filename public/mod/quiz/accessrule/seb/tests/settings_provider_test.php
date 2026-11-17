@@ -177,7 +177,7 @@ final class settings_provider_test extends \advanced_testcase {
     public function test_hideifs(): void {
         $settinghideifs = settings_provider::get_quiz_hideifs();
 
-        $this->assertCount(25, $settinghideifs);
+        $this->assertCount(27, $settinghideifs);
 
         $this->assertArrayHasKey('seb_templateid', $settinghideifs);
         $this->assertCount(1, $settinghideifs['seb_templateid']);
@@ -377,6 +377,26 @@ final class settings_provider_test extends \advanced_testcase {
         $this->assert_hide_if(
             $settinghideifs['seb_allowcapturemicrophone'][0],
             'seb_allowcapturemicrophone',
+            'seb_requiresafeexambrowser',
+            'noteq',
+            settings_provider::USE_SEB_CONFIG_MANUALLY
+        );
+
+        $this->assertArrayHasKey('seb_allowscreencapture', $settinghideifs);
+        $this->assertCount(1, $settinghideifs['seb_allowscreencapture']);
+        $this->assert_hide_if(
+            $settinghideifs['seb_allowscreencapture'][0],
+            'seb_allowscreencapture',
+            'seb_requiresafeexambrowser',
+            'noteq',
+            settings_provider::USE_SEB_CONFIG_MANUALLY
+        );
+
+        $this->assertArrayHasKey('seb_alloweddisplaysmaxnumber', $settinghideifs);
+        $this->assertCount(1, $settinghideifs['seb_alloweddisplaysmaxnumber']);
+        $this->assert_hide_if(
+            $settinghideifs['seb_alloweddisplaysmaxnumber'][0],
+            'seb_alloweddisplaysmaxnumber',
             'seb_requiresafeexambrowser',
             'noteq',
             settings_provider::USE_SEB_CONFIG_MANUALLY
@@ -643,9 +663,8 @@ final class settings_provider_test extends \advanced_testcase {
      * Test SEB usage options.
      *
      * @param string $settingcapability Setting capability to check options against.
-     *
-     * @dataProvider settings_capability_data_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('settings_capability_data_provider')]
     public function test_get_requiresafeexambrowser_options($settingcapability): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -1155,9 +1174,8 @@ final class settings_provider_test extends \advanced_testcase {
      * Test that users can or can not Configure SEb manually
      *
      * @param string $settingcapability Setting capability to check manual option against.
-     *
-     * @dataProvider settings_capability_data_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('settings_capability_data_provider')]
     public function test_can_configure_manually($settingcapability): void {
         $this->resetAfterTest();
         $this->course = $this->getDataGenerator()->create_course();
@@ -1254,9 +1272,8 @@ final class settings_provider_test extends \advanced_testcase {
      * Test that we can check identify conflicting permissions if set to use own configure manually.
      *
      * @param string $settingcapability Setting capability to check manual option against.
-     *
-     * @dataProvider settings_capability_data_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('settings_capability_data_provider')]
     public function test_is_conflicting_permissions_for_configure_manually($settingcapability): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -1341,6 +1358,8 @@ final class settings_provider_test extends \advanced_testcase {
         $allsettings->seb_allowedbrowserexamkeys = 22;
         $allsettings->seb_allowcapturecamera = 23;
         $allsettings->seb_allowcapturemicrophone = 24;
+        $allsettings->seb_allowscreencapture = 25;
+        $allsettings->seb_alloweddisplaysmaxnumber = 26;
 
         return $allsettings;
     }
@@ -1446,6 +1465,8 @@ final class settings_provider_test extends \advanced_testcase {
                 ],
                 'seb_allowcapturecamera' => [],
                 'seb_allowcapturemicrophone' => [],
+                'seb_allowscreencapture' => [],
+                'seb_alloweddisplaysmaxnumber' => [],
                 'seb_allowspellchecking' => [],
                 'seb_activateurlfiltering' => [
                     'seb_filterembeddedcontent' => [],

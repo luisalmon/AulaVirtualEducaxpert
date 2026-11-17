@@ -36,10 +36,10 @@ use mod_quiz\quiz_settings;
  */
 class override_manager {
     /** @var array quiz setting keys that can be overwritten **/
-    private const OVERRIDEABLE_QUIZ_SETTINGS = ['timeopen', 'timeclose', 'timelimit', 'attempts', 'password'];
+    private const OVERRIDEABLE_QUIZ_SETTINGS = ['timeopen', 'timeclose', 'duedate', 'timelimit', 'attempts', 'password'];
 
     /** @var array override fields that are numeric and can validly be 0 **/
-    private const OVERRIDE_NUMERIC_FIELDS = ['attempts', 'timelimit', 'timeopen', 'timeclose'];
+    private const OVERRIDE_NUMERIC_FIELDS = ['attempts', 'timelimit', 'timeopen', 'timeclose', 'duedate'];
 
     /**
      * Create override manager
@@ -138,6 +138,16 @@ class override_manager {
             $errors['timeclose'][] = new \lang_string('closebeforeopen', 'quiz');
         }
 
+        // Ensure duedate is later than timeopen, if both are set.
+        if (!empty($formdata->timeopen) && !empty($formdata->duedate) && $formdata->duedate <= $formdata->timeopen) {
+            $errors['duedate'][] = new \lang_string('duedatebeforeopen', 'quiz');
+        }
+
+        // Ensure timeclose is later than duedate, if both are set.
+        if (!empty($formdata->timeclose) && !empty($formdata->duedate) && $formdata->timeclose < $formdata->duedate) {
+            $errors['duedate'][] = new \lang_string('duedateafterclose', 'quiz');
+        }
+
         // Ensure attempts is a integer greater than or equal to 0 (0 is unlimited attempts).
         if (isset($formdata->attempts) && ((int) $formdata->attempts < 0)) {
             $errors['attempts'][] = new \lang_string('overrideinvalidattempts', 'quiz');
@@ -203,6 +213,11 @@ class override_manager {
 
         // Existing record must exist.
         if (empty($existingrecord)) {
+            $errors['general'][] = new \lang_string('overrideinvalidexistingid', 'quiz');
+        }
+
+        // Override must belong to the authorized quiz.
+        if (!empty($existingrecord) && !empty($formdata->quiz) && $existingrecord->quiz != $formdata->quiz) {
             $errors['general'][] = new \lang_string('overrideinvalidexistingid', 'quiz');
         }
 
@@ -629,13 +644,33 @@ class override_manager {
     }
 
     /**
-     * Computes the effective overridden open/close times for a user for a given quiz.
+     * Computes the effective overridden open and close times for a user for a given quiz.
      *
+     * @deprecated Since Moodle 5.3. Use override_manager::get_effective_times() instead.
+     * @todo Final deprecation in Moodle 7.0. See MDL-89747.
      * @param int $quizid The quiz ID.
      * @param int $userid The user ID.
      * @return array Array with optional keys 'timeopen' and 'timeclose'.
      */
+    #[\core\attribute\deprecated(
+        replacement: 'override_manager::get_effective_times',
+        since: '5.3',
+        mdl: 'MDL-89711',
+    )]
     public static function get_effective_open_close_times(int $quizid, int $userid): array {
+        \core\deprecation::emit_deprecation([self::class, __FUNCTION__]);
+        $times = self::get_effective_times($quizid, $userid);
+        return array_intersect_key($times, array_flip(['timeopen', 'timeclose']));
+    }
+
+    /**
+     * Computes the effective overridden times for a user for a given quiz.
+     *
+     * @param int $quizid The quiz ID.
+     * @param int $userid The user ID.
+     * @return array Array with optional keys 'timeopen', 'timeclose' and 'duedate'.
+     */
+    public static function get_effective_times(int $quizid, int $userid): array {
         $overrides = quiz_overrides_cache_manager::get_overrides($quizid, $userid);
 
         if (empty($overrides)) {
@@ -648,22 +683,28 @@ class override_manager {
 
         $timeopen = empty($useroverride) ? null : $useroverride->timeopen;
         $timeclose = empty($useroverride) ? null : $useroverride->timeclose;
+        $duedate = empty($useroverride) ? null : $useroverride->duedate;
 
         // If either value is still null, check group overrides.
-        if ($timeopen === null || $timeclose === null) {
+        if ($timeopen === null || $timeclose === null || $duedate === null) {
             $groupoverrides = array_filter($overrides, fn($o): bool => !empty($o->groupid));
             if (!empty($groupoverrides)) {
                 $opens = array_filter(array_column($groupoverrides, 'timeopen'), fn($t): bool => $t !== null);
                 $closes = array_filter(array_column($groupoverrides, 'timeclose'), fn($t): bool => $t !== null);
+                $duedates = array_filter(array_column($groupoverrides, 'duedate'), fn($t): bool => $t !== null);
 
                 // Get the earliest open time.
                 if ($timeopen === null && count($opens)) {
                     $timeopen = min($opens);
                 }
 
-                // Get the latest close time, unless any are 0 which takes precedence.
+                // Get the latest close/due date, unless any are 0 which takes precedence.
                 if ($timeclose === null && count($closes)) {
-                    $timeclose = in_array(0, $closes) ? 0 : max($closes);
+                    $timeclose = self::resolve_latest_group_override_date($closes);
+                }
+
+                if ($duedate === null && count($duedates)) {
+                    $duedate = self::resolve_latest_group_override_date($duedates);
                 }
             }
         }
@@ -675,8 +716,22 @@ class override_manager {
         if ($timeclose !== null) {
             $result['timeclose'] = $timeclose;
         }
+        if ($duedate !== null) {
+            $result['duedate'] = $duedate;
+        }
 
         return $result;
+    }
+
+    /**
+     * Resolves a set of group override dates (for timeclose or duedate) to a single effective
+     * date: the latest of them, unless one of them is 0 ("no date"), which takes precedence.
+     *
+     * @param array $dates non-empty array of timestamps from group overrides.
+     * @return int the effective date.
+     */
+    private static function resolve_latest_group_override_date(array $dates): int {
+        return in_array(0, $dates) ? 0 : max($dates);
     }
 
     /**

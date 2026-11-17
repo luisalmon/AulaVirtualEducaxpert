@@ -35,6 +35,9 @@ use core\output\user_picture;
  * @copyright 2011 David Mudrak <david@moodle.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\single_button::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\url_select::class, 'disable_option')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\url_select::class, 'enable_option')]
 final class outputcomponents_test extends \advanced_testcase {
     /**
      * Tests user_picture::fields.
@@ -304,7 +307,7 @@ final class outputcomponents_test extends \advanced_testcase {
         // $this->assertSame($CFG->wwwroot.'/theme/image.php/formal_white/core/1/u/f2', $up2->get_url($page, $renderer)->out(false));
 
         // Test non-slashargument images.
-        set_config('theme', 'classic');
+        set_config('theme', 'boost');
         $CFG->wwwroot = str_replace('https:', 'http:', $CFG->wwwroot);
         $CFG->slasharguments = 0;
         $page = new \moodle_page();
@@ -313,7 +316,7 @@ final class outputcomponents_test extends \advanced_testcase {
         $renderer = $page->get_renderer('core');
 
         $up3 = new user_picture($user3);
-        $this->assertSame($CFG->wwwroot.'/theme/image.php?theme=classic&component=core&rev=1&image=u%2Ff2', $up3->get_url($page, $renderer)->out(false));
+        $this->assertSame($CFG->wwwroot.'/theme/image.php?theme=boost&component=core&rev=1&image=u%2Ff2', $up3->get_url($page, $renderer)->out(false));
     }
 
     public function test_empty_menu(): void {
@@ -474,6 +477,7 @@ EOF;
     }
 
     public function test_pix_icon(): void {
+        global $CFG;
         $this->resetAfterTest();
 
         $page = new \moodle_page();
@@ -489,8 +493,9 @@ EOF;
         $reason = 'An icon with alt text is not hidden from screenreaders.';
         $this->assertStringNotContainsString('aria-hidden="true"', $renderer->pix_icon('t/print', 'Print'), $reason);
 
-        // Test another theme with a different icon system.
-        set_config('theme', 'classic');
+        // Test the same output is produced with another theme.
+        $CFG->themedir = $CFG->dirroot . '/lib/tests/fixtures/themes';
+        set_config('theme', 'parent');
         // Need to reset after changing theme.
         $page->reset_theme_and_output();
         $renderer = $page->get_renderer('core');
@@ -583,7 +588,6 @@ EOF;
     }
     /**
      * Test for checking the template context data for the single_select element.
-     * @covers \single_button
      */
     public function test_single_button(): void {
         global $PAGE;
@@ -699,8 +703,6 @@ EOF;
 
     /**
      * Test for checking the template context data for the url_select element.
-     * @covers \url_select::disable_option
-     * @covers \url_select::enable_option
      */
     public function test_url_select_disabled_options(): void {
         global $PAGE;
@@ -746,10 +748,10 @@ EOF;
     /**
      * Test block_contents is_fake() method.
      *
-     * @dataProvider block_contents_is_fake_provider
      * @param mixed $value Value for the data-block attribute
      * @param boolean $expected The expected result
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('block_contents_is_fake_provider')]
     public function test_block_contents_is_fake($value, $expected): void {
         $bc = new block_contents(array());
         if ($value !== false) {

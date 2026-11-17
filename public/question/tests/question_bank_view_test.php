@@ -29,8 +29,8 @@ require_once($CFG->dirroot . '/question/editlib.php');
  * @package    core_question
  * @copyright  2024 the Open University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers \core_question\local\bank\view
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core_question\local\bank\view::class)]
 final class question_bank_view_test extends \advanced_testcase {
 
     public function test_viewing_question_bank_should_not_load_hidden_question(): void {
@@ -70,8 +70,8 @@ final class question_bank_view_test extends \advanced_testcase {
         $view->display();
         $html = ob_get_clean();
         // Verify the output should included the latest version.
-        $this->assertStringContainsString('This is the latest version', $html);
-        $this->assertStringNotContainsString('Example question', $html);
+        $this->assertStringContainsString('This is the latest version</a>', $html);
+        $this->assertStringNotContainsString('Example question</a>', $html);
         // Delete the latest version.
         question_delete_question($newversion->id);
 
@@ -79,8 +79,8 @@ final class question_bank_view_test extends \advanced_testcase {
         ob_start();
         $view->display();
         $html = ob_get_clean();
-        $this->assertStringContainsString('Example question', $html);
-        $this->assertStringNotContainsString('This is the latest version', $html);
+        $this->assertStringContainsString('Example question</a>', $html);
+        $this->assertStringNotContainsString('This is the latest version</a>', $html);
 
         // Use show hidden question filter.
         $params['filter'] = [
@@ -101,7 +101,7 @@ final class question_bank_view_test extends \advanced_testcase {
         ob_start();
         $view->display();
         $html = ob_get_clean();
-        $this->assertStringContainsString('This is the latest version', $html);
-        $this->assertStringNotContainsString('Example question', $html);
+        $this->assertStringContainsString('This is the latest version</a>', $html);
+        $this->assertStringNotContainsString('Example question</a>', $html);
     }
 }

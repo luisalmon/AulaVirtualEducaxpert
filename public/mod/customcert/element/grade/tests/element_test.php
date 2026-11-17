@@ -111,7 +111,7 @@ final class element_test extends advanced_testcase {
         $this->assertInstanceOf(form_element_interface::class, $el);
         $this->assertInstanceOf(persistable_element_interface::class, $el);
         $this->assertInstanceOf(renderable_element_interface::class, $el);
-        $this->assertInstanceOf(validatable_element_interface::class, $el);
+        $this->assertNotInstanceOf(validatable_element_interface::class, $el);
     }
 
     /**
@@ -164,16 +164,6 @@ final class element_test extends advanced_testcase {
     }
 
     /**
-     * Test that validate() returns an empty array.
-     *
-     * @covers \customcertelement_grade\element::validate
-     */
-    public function test_validate_returns_empty_array(): void {
-        $el = new element($this->make_record());
-        $this->assertSame([], $el->validate([]));
-    }
-
-    /**
      * Test that render_html() returns empty string when no data is set.
      *
      * @covers \customcertelement_grade\element::render_html
@@ -215,11 +205,12 @@ final class element_test extends advanced_testcase {
      * Helper to create a full customcert setup and return [elementid, customcertid, courseid].
      *
      * @param string $gradeitem
+     * @param \stdClass|null $course Course to create the certificate in.
      * @return array{int, int, int}
      */
-    private function create_customcert_setup(string $gradeitem): array {
+    private function create_customcert_setup(string $gradeitem, ?\stdClass $course = null): array {
         global $DB;
-        $course = $this->getDataGenerator()->create_course();
+        $course ??= $this->getDataGenerator()->create_course();
         $customcert = $this->getDataGenerator()->create_module('customcert', ['course' => $course->id]);
         $template = $DB->get_record(
             'customcert_templates',
@@ -273,7 +264,7 @@ final class element_test extends advanced_testcase {
         $grade->timemodified = $time;
         $grade->insert();
 
-        [$elementid, $customcertid] = $this->create_customcert_setup((string)$assign->cmid);
+        [$elementid, $customcertid] = $this->create_customcert_setup((string)$assign->cmid, $course);
         $DB->set_field(
             'customcert_elements',
             'data',
@@ -319,7 +310,7 @@ final class element_test extends advanced_testcase {
         $grade->timemodified = $time;
         $grade->insert();
 
-        [$elementid, $customcertid] = $this->create_customcert_setup(element::GRADE_COURSE);
+        [$elementid, $customcertid] = $this->create_customcert_setup(element::GRADE_COURSE, $course);
         certificate_issue_service::create()->issue_certificate($customcertid, (int)$student->id);
 
         $rec = $DB->get_record('customcert_elements', ['id' => $elementid]);
@@ -361,7 +352,7 @@ final class element_test extends advanced_testcase {
         $grade->insert();
 
         $gradeitem = 'gradeitem:' . $gi->id;
-        [$elementid, $customcertid] = $this->create_customcert_setup($gradeitem);
+        [$elementid, $customcertid] = $this->create_customcert_setup($gradeitem, $course);
         certificate_issue_service::create()->issue_certificate($customcertid, (int)$student->id);
 
         $rec = $DB->get_record('customcert_elements', ['id' => $elementid]);

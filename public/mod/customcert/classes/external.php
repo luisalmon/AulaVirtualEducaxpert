@@ -18,13 +18,14 @@
  * This is the external API for this tool.
  *
  * @package    mod_customcert
- * @copyright  2016 Mark Nelson <markn@moodle.com>
+ * @copyright  2016 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 namespace mod_customcert;
 
 use context_module;
 use context_system;
+use invalid_parameter_exception;
 use moodle_exception;
 use core_external\external_api;
 use core_external\external_value;
@@ -32,11 +33,13 @@ use core_external\external_single_structure;
 use core_external\external_multiple_structure;
 use core_external\external_function_parameters;
 use core_user\fields;
+use mod_customcert\element\stylable_element_interface;
 use mod_customcert\event\issue_deleted;
 use mod_customcert\service\certificate_repository;
 use mod_customcert\service\element_factory;
 use mod_customcert\service\element_layout;
 use mod_customcert\service\element_repository;
+use mod_customcert\service\form_service;
 use mod_customcert\service\issue_repository;
 use mod_customcert\service\pdf_generation_service;
 use mod_customcert\service\persistence_helper;
@@ -47,7 +50,7 @@ use Throwable;
 /**
  * This is the external API for this tool.
  *
- * @copyright  2016 Mark Nelson <markn@moodle.com>
+ * @copyright  2016 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class external extends external_api {
@@ -76,12 +79,18 @@ class external extends external_api {
     /**
      * Handles saving element data.
      *
+     * Returns the generic layout properties that the rearranger keeps in React state so the
+     * interactive editor can refresh without a full page reload. Values are read from the
+     * saved element/layout (not from element-type-specific fields).
+     *
      * @param int $templateid The template id.
      * @param int $elementid The element id.
      * @param array $values The values to save
-     * @return bool
+     * @return array{id: int, posx: int, posy: int, width: ?int, refpoint: int, alignment: string, html: string}
      */
     public static function save_element($templateid, $elementid, $values) {
+        global $USER;
+
         $params = [
             'templateid' => $templateid,
             'elementid' => $elementid,
@@ -89,54 +98,178 @@ class external extends external_api {
         ];
         self::validate_parameters(self::save_element_parameters(), $params);
 
-        // Set the template.
         $templaterepo = new template_repository();
         $template = template::from_record($templaterepo->get_by_id_or_fail((int)$templateid));
 
-        // Perform checks.
         if ($cm = $template->get_cm()) {
             self::validate_context(context_module::instance($cm->id));
         } else {
             self::validate_context(context_system::instance());
         }
-        // Make sure the user has the required capabilities.
         $template->require_manage();
 
         // Load the element, verifying it belongs to the authorised template.
         $elementrepo = new element_repository(element_factory::build_with_defaults());
         $element = $elementrepo->get_for_template_or_fail((int)$templateid, (int)$elementid);
 
-        // Build the updated record by merging submitted values onto the existing element.
-        $record = clone $element;
+        // These fields identify the element and are managed by the server. They must never
+        // be overwritten by client-supplied values, otherwise the authorisation performed
+        // above (against $element) could be bypassed by mutating the record afterwards.
+        $protectedfields = [
+            'id' => true,
+            'pageid' => true,
+            'element' => true,
+            'sequence' => true,
+            'timecreated' => true,
+            'timemodified' => true,
+        ];
+
+        // Submit the values through the element edit form so the same select-option filtering
+        // and validation as edit_element.php is applied.
+        $factory = element_factory::build_with_defaults();
+        $passwordfields = (new edit_element_form(null, ['element' => $element, 'factory' => $factory]))
+            ->get_password_field_names();
+        $submission = self::get_form_submission($element, $passwordfields);
         foreach ($values as $value) {
             $field = $value['name'];
-            $record->$field = $value['value'];
+            if (isset($protectedfields[$field])) {
+                throw new invalid_parameter_exception('Field is not allowed to be updated: ' . $field);
+            }
+            $submission[$field] = $value['value'];
         }
 
-        // Instantiate the element via the factory so element-specific normalisation is applied.
-        $factory = element_factory::build_with_defaults();
-        $instance = $factory->create_from_legacy_record((object)(array)$record);
+        $formid = preg_replace('/[^a-z0-9_]/i', '_', edit_element_form::class);
+        $submission['_qf__' . $formid] = 1;
+        // The web service request is already authenticated, so skip the form's own sesskey check.
+        $ignoresesskey = $USER->ignoresesskey ?? null;
+        $USER->ignoresesskey = true;
+        try {
+            $mform = new edit_element_form(
+                null,
+                ['element' => $element, 'factory' => $factory],
+                'post',
+                '',
+                null,
+                true,
+                $submission
+            );
+        } finally {
+            if ($ignoresesskey === null) {
+                unset($USER->ignoresesskey);
+            } else {
+                $USER->ignoresesskey = $ignoresesskey;
+            }
+        }
+        if (!$mform->is_validated() || !($data = $mform->get_data())) {
+            throw new invalid_parameter_exception('Invalid element values');
+        }
+
+        // Only the validated form data is persisted; identity always comes from the authorised element.
+        $data->id = (int)$element->id;
+        $data->pageid = (int)$element->pageid;
+        $data->element = (string)$element->element;
+
+        $dataarray = (array)$data;
+        (new form_service())->normalise_submission($dataarray);
+        $data = (object)$dataarray;
+
+        $record = clone $data;
+        $record->data = $element->data;
+        $instance = $factory->create_from_record($record);
         if (!$instance) {
             throw new moodle_exception('invalidelementtype', 'customcert');
         }
-        $record->data = persistence_helper::to_json_data($instance, (object)(array)$record);
 
-        // Create the final instance from the normalised record and persist.
-        $instance = $factory->create_from_legacy_record($record);
+        $record = (object)[
+            'id' => (int)$element->id,
+            'pageid' => (int)$element->pageid,
+            'element' => (string)$element->element,
+            'name' => $data->name,
+            'posx' => $data->posx ?? $element->posx,
+            'posy' => $data->posy ?? $element->posy,
+            'refpoint' => $data->refpoint ?? $element->refpoint,
+            'alignment' => $data->alignment ?? $element->alignment,
+            'sequence' => $element->sequence,
+            'timecreated' => $element->timecreated,
+            'timemodified' => $element->timemodified,
+        ];
+        $record->data = persistence_helper::to_json_data($instance, $data);
+
+        $instance = $factory->create_from_record($record);
         $layout = element_layout::from_record($record);
+
+        // Defence in depth: the instance about to be persisted must still match the
+        // authorised element's identity.
+        if (
+            $instance->get_id() !== (int)$element->id ||
+            $instance->get_pageid() !== (int)$element->pageid ||
+            $instance->get_type() !== (string)$element->element
+        ) {
+            throw new invalid_parameter_exception('Element identity mismatch');
+        }
+
         $elementrepo->save($instance, $layout);
 
-        // For compatibility keep a simple truthy result.
-        return true;
+        // Return generic layout + preview HTML for the rearranger (element-type agnostic).
+        return [
+            'id' => $instance->get_id(),
+            'posx' => (int)($layout->posx ?? 0),
+            'posy' => (int)($layout->posy ?? 0),
+            'width' => $instance instanceof stylable_element_interface ? $instance->get_width() : null,
+            'refpoint' => (int)($layout->refpoint ?? 0),
+            'alignment' => $layout->alignment,
+            'html' => $instance->render_html(),
+        ];
+    }
+
+    /**
+     * Builds the base form submission from the stored element so omitted fields keep their values.
+     *
+     * @param stdClass $element The stored element record.
+     * @param string[] $excludedfields Form fields that must be supplied explicitly rather than replayed.
+     * @return array
+     */
+    private static function get_form_submission(stdClass $element, array $excludedfields = []): array {
+        $submission = [
+            'name' => (string)$element->name,
+            'posx' => $element->posx,
+            'posy' => $element->posy,
+            'refpoint' => $element->refpoint,
+            'alignment' => $element->alignment,
+        ];
+        $payload = json_decode((string)($element->data ?? ''), true);
+        if (is_array($payload)) {
+            foreach ($payload as $key => $value) {
+                if (in_array($key, $excludedfields, true)) {
+                    continue;
+                }
+                if (is_scalar($value) && $value !== false) {
+                    $submission[$key] = (string)$value;
+                }
+            }
+        }
+
+        return array_filter($submission, static fn($value) => $value !== null);
     }
 
     /**
      * Returns the save_element result value.
      *
-     * @return external_value
+     * @return external_single_structure
      */
     public static function save_element_returns() {
-        return new external_value(PARAM_BOOL, 'True if successful, false otherwise');
+        return new external_single_structure(
+            [
+                'id' => new external_value(PARAM_INT, 'The element id'),
+                'posx' => new external_value(PARAM_INT, 'X position in mm'),
+                'posy' => new external_value(PARAM_INT, 'Y position in mm'),
+                'width' => new external_value(PARAM_INT, 'Optional max width in mm', VALUE_REQUIRED, null, NULL_ALLOWED),
+                'refpoint' => new external_value(PARAM_INT, 'Reference point'),
+                'alignment' => new external_value(PARAM_ALPHA, 'Text alignment L, C, or R'),
+                'html' => new external_value(PARAM_RAW, 'Server-rendered preview HTML'),
+            ],
+            'Updated generic layout properties for the saved element'
+        );
     }
 
     /**
@@ -167,11 +300,9 @@ class external extends external_api {
         ];
         self::validate_parameters(self::get_element_html_parameters(), $params);
 
-        // Set the template.
         $templaterepo = new template_repository();
         $template = template::from_record($templaterepo->get_by_id_or_fail((int)$templateid));
 
-        // Perform checks.
         if ($cm = $template->get_cm()) {
             self::validate_context(context_module::instance($cm->id));
         } else {
@@ -185,9 +316,8 @@ class external extends external_api {
         $elementrepo = new element_repository(element_factory::build_with_defaults());
         $element = $elementrepo->get_for_template_or_fail((int)$templateid, (int)$elementid);
 
-        // Get an instance of the element class.
         $factory = element_factory::build_with_defaults();
-        if ($e = $factory->create_from_legacy_record($element)) {
+        if ($e = $factory->create_from_record($element)) {
             return $e->render_html();
         }
 
@@ -243,12 +373,10 @@ class external extends external_api {
 
         $cm = get_coursemodule_from_instance('customcert', $certificate->id, 0, false, MUST_EXIST);
 
-        // Make sure the user has the required capabilities.
         $context = context_module::instance($cm->id);
         self::validate_context($context);
         require_capability('mod/customcert:manage', $context);
 
-        // Delete the issue.
         $deleted = $issuerepo->delete((int)$issue->id);
 
         // Trigger event if deletion succeeded.
@@ -307,7 +435,7 @@ class external extends external_api {
                 ),
                 'limit' => new external_value(
                     PARAM_INT,
-                    'Maximum number of results (default 100, max 500)',
+                    'Maximum number of results (default 100, max 500; max 20 when including PDFs)',
                     VALUE_DEFAULT,
                     100
                 ),
@@ -328,7 +456,7 @@ class external extends external_api {
      * @param ?int $userid User id. Returns items for this user.
      * @param ?int $customcertid Customcert id. Returns items for this customcert.
      * @param bool $includepdf Whether to include PDF contents
-     * @param int $limit Max results
+     * @param int $limit Maximum results (500 normally, 20 when including PDFs)
      * @param int $offset Offset for paging
      * @return array
      */
@@ -360,7 +488,10 @@ class external extends external_api {
         $userid = $params['userid'];
         $customcertid = $params['customcertid'];
         $includepdf = !empty($params['includepdf']);
-        $limit = max(1, min(500, $params['limit']));
+
+        // When including PDFs, we limit the number of issues to avoid resource exhaustion.
+        $maxlimit = $includepdf ? 20 : 500;
+        $limit = max(1, min($maxlimit, $params['limit']));
         $offset = max(0, $params['offset']);
 
         // Capability check.
@@ -368,7 +499,6 @@ class external extends external_api {
         self::validate_context($context);
         require_capability('mod/customcert:viewallcertificates', $context);
 
-        // Prepare SQL.
         [$fullnamefields, $sqlparams] = fields::get_sql_fullname();
         $where = [];
 

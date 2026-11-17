@@ -18,12 +18,12 @@
  * This file contains the version information for the text plugin.
  *
  * @package    customcertelement_text
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die('Direct access to this script is forbidden.');
 
-$plugin->version   = 2026042001; // The current module version (Date: YYYYMMDDXX).
-$plugin->requires  = 2026042000; // Requires this Moodle version (5.2).
+$plugin->version   = 2026060500; // The current module version (Date: YYYYMMDDXX).
+$plugin->requires  = 2026060500; // Requires this Moodle version (5.3).
 $plugin->component = 'customcertelement_text';

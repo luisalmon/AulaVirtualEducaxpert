@@ -409,7 +409,7 @@ class api {
      * @return bool
      */
     public static function is_enabled() {
-        return is_enabled_auth('oauth2');
+        return \core\di::get(\core\authentication::class)->is_enabled('oauth2');
     }
 
     /**
@@ -434,7 +434,7 @@ class api {
         }
 
         // Create a new user.
-        $user->id = user_create_user($user, false, true);
+        $user->id = \core\user::create_user($user, false, true);
 
         // If profile fields exist then save custom profile fields data.
         if ($hasprofilefield) {

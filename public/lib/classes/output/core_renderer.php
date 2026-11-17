@@ -216,6 +216,10 @@ class core_renderer extends renderer_base {
             );
         }
 
+        $lang = optional_param('lang', '', PARAM_LANG);
+        $languages = \get_string_manager()->get_list_of_translations();
+        $hook->add_html($this->language_header_links($languages, $lang));
+
         $output = $hook->get_output();
 
         // Set up help link popups for all links with the helptooltip class
@@ -289,6 +293,77 @@ class core_renderer extends renderer_base {
         }
 
         return $output;
+    }
+
+    /**
+     * Any language related header links to help crawlers index pages in the correct languages.
+     *
+     * @param string[] $languages that are installed
+     * @param string $langparam what is the optional lang param
+     * @return string HTML fragment.
+     */
+    public function language_header_links($languages, $langparam = '') {
+        global $CFG;
+
+        $html = '';
+
+        // First find what languages are crawlable.
+        $crawlable = [];
+        $langcodes = array_map('trim', explode(',', $CFG->langscrawlable ?? ''));
+        foreach ($langcodes as $langcode) {
+            // If the langcode contains optional mapping use it instead.
+            $parts = explode('|', $langcode);
+            $crawlable[$parts[0]] = end($parts);
+        }
+        $crawlable = array_filter($crawlable);
+
+        // Only include languages that are actually installed on this site.
+        $crawlable = array_filter($crawlable, fn($langpack) => isset($languages[$langpack]), ARRAY_FILTER_USE_KEY);
+
+        // If we have no lang param, or we see a language param that isn't allowed
+        // then point the crawler back to the canonical page.
+        if (empty($langparam) || !array_key_exists($langparam, $crawlable)) {
+            $html .= html_writer::empty_tag('link', [
+                'rel' => 'canonical',
+                'href' => $this->page->url->out(false),
+            ]);
+            $html .= "\n";
+        }
+
+        // If we see a language param that is allowed to be crawled then this page
+        // is also canonical as well as the original one without any language param.
+        if (!empty($langparam) && array_key_exists($langparam, $crawlable)) {
+            $html .= html_writer::empty_tag('link', [
+                'rel' => 'canonical',
+                'href' => $this->page->url->out(false, ['lang' => $langparam]),
+            ]);
+            $html .= "\n";
+        }
+
+        // If we allow crawling of more than one language then each page should
+        // link to all the language variants of the same page.
+        if (!empty($crawlable)) {
+            $html .= html_writer::empty_tag('link', [
+                'rel' => 'alternate',
+                'hreflang' => $CFG->lang,
+                'href' => $this->page->url->out(false),
+            ]);
+            $html .= "\n";
+
+            foreach ($crawlable as $langpack => $langcode) {
+                // Skip the default language — it's already emitted as the first alternate above.
+                if ($langpack === $CFG->lang) {
+                    continue;
+                }
+                $html .= html_writer::empty_tag('link', [
+                    'rel' => 'alternate',
+                    'hreflang' => $langcode,
+                    'href' => $this->page->url->out(false, ['lang' => $langpack]),
+                ]);
+                $html .= "\n";
+            }
+        }
+        return $html;
     }
 
     /**
@@ -689,7 +764,7 @@ class core_renderer extends renderer_base {
             if (!isguestuser()) {
                 // Include this file only when required.
                 require_once($CFG->dirroot . '/user/lib.php');
-                if (($count = user_count_login_failures($USER)) && !empty($CFG->displayloginfailures)) {
+                if (($count = \core\user::count_login_failures($USER)) && !empty($CFG->displayloginfailures)) {
                     $loggedinas .= '<div class="loginfailures">';
                     $a = new stdClass();
                     $a->attempts = $count;
@@ -844,7 +919,7 @@ class core_renderer extends renderer_base {
         if (isset($SESSION->justloggedin) && !empty($CFG->displayloginfailures)) {
             require_once($CFG->dirroot . '/user/lib.php');
             // Set second parameter to false as we do not want reset the counter, the same message appears on footer.
-            if ($count = user_count_login_failures($USER, false)) {
+            if ($count = \core\user::count_login_failures($USER, false)) {
                 $this->page->add_body_class('loginfailures');
             }
         }
@@ -2525,13 +2600,28 @@ EOD;
      */
     public function edit_switch() {
         if ($this->page->user_allowed_editing()) {
+            // Generated once here, rather than via the template's own {{uniqid}} helper, so the
+            // same id can be shared between the reactprops below and the NonJS fallback markup.
+            $elementid = html_writer::random_id('editingswitch');
+            $checked = $this->page->user_is_editing();
             $temp = (object) [
                 'legacyseturl' => (new moodle_url('/editmode.php'))->out(false),
                 'pagecontextid' => $this->page->context->id,
                 'pageurl' => $this->page->url,
                 'sesskey' => sesskey(),
+                'elementid' => $elementid,
+                // JSON props for the core/EditModeSwitch React component (core/nav/PrimaryNav's
+                // export_react_props() pattern): built server-side so the React markup and the
+                // NonJS fallback markup below can never disagree about id/label/state.
+                'reactprops' => json_encode([
+                    'id' => $elementid,
+                    'context' => $this->page->context->id,
+                    'pageurl' => $this->page->url->out(false),
+                    'checked' => $checked,
+                    'label' => get_string('editmode'),
+                ], JSON_UNESCAPED_UNICODE),
             ];
-            if ($this->page->user_is_editing()) {
+            if ($checked) {
                 $temp->checked = true;
             }
             return $this->render_from_template('core/editswitch', $temp);
@@ -2588,6 +2678,9 @@ EOD;
 
         $output = '';
         $obbuffer = '';
+
+        // Do not display the navigation footer when encountering an error.
+        $this->page->set_show_navigation_footer(false);
 
         if ($this->has_started()) {
             // we can not always recover properly here, we have problems with output buffering,
@@ -3152,7 +3245,7 @@ EOD;
         $loginurl = get_login_url();
 
         // Get some navigation opts.
-        $opts = user_get_user_navigation_info($user, $this->page);
+        $opts = \core\user::get_user_navigation_info($user, $this->page);
 
         if (!empty($opts->unauthenticateduser)) {
             $returnstr = get_string($opts->unauthenticateduser['content'], 'moodle');
@@ -3248,10 +3341,12 @@ EOD;
                         $am->add($divider);
                         break;
 
-                    case 'invalid':
-                        // Silently skip invalid entries (should we post a notification?).
+                    case 'header':
+                        $am->add($this->render_from_template('core/user_action_menu_item_header', $value));
                         break;
-
+                    case 'text':
+                        $am->add($this->render_from_template('core/user_action_menu_item_text', $value));
+                        break;
                     case 'link':
                         // Process this as a link item.
                         $pix = null;
@@ -3266,7 +3361,7 @@ EOD;
                         }
 
                         $al = new action_menu\link_secondary(
-                            $value->url,
+                            new \moodle_url($value->url),
                             $pix,
                             $value->title,
                             ['class' => 'icon']
@@ -4164,12 +4259,12 @@ EOD;
             }
 
             // Only provide user information if the user is the current user, or a user which the current user can view.
-            // When checking user_can_view_profile(), either:
+            // When checking \core\user::can_view_profile(), either:
             // If the page context is course, check the course context (from the page object) or;
             // If page context is NOT course, then check across all courses.
             $course = ($this->page->context->contextlevel == CONTEXT_COURSE) ? $this->page->course : null;
 
-            if (user_can_view_profile($user, $course)) {
+            if (\core\user::can_view_profile($user, $course)) {
                 // Use the user's full name if the heading isn't set.
                 if (empty($heading)) {
                     $heading = fullname($user);
@@ -4660,22 +4755,7 @@ EOD;
      * @return string
      */
     public function render_login(\core_auth\output\login $form) {
-        global $CFG, $SITE;
-
         $context = $form->export_for_template($this);
-
-        $context->errorformatted = $this->error_text($context->error);
-        $url = $this->get_logo_url();
-        if ($url) {
-            $url = $url->out(false);
-        }
-        $context->logourl = $url;
-        $context->sitename = format_string(
-            $SITE->fullname,
-            true,
-            ['context' => context_course::instance(SITEID), "escape" => false]
-        );
-        $context->hasauthinstructions = !empty($CFG->auth_instructions);
 
         return $this->render_from_template('core/loginform', $context);
     }
@@ -4800,6 +4880,19 @@ EOD;
     }
 
     /**
+     * Wraps a JS snippet in an IIFE that removes its own script element from the DOM after executing.
+     *
+     * Use this for inline scripts emitted repeatedly (e.g. progress bar updates, streaming
+     * replacements) to prevent DOM node accumulation during long-running pages.
+     *
+     * @param string $js The JS snippet to wrap.
+     * @return string HTML script element.
+     */
+    protected function script_self_removing(string $js): string {
+        return html_writer::script("(function(s){\n{$js}s.remove();\n})(document.currentScript);");
+    }
+
+    /**
      * Renders a progress bar.
      *
      * Do not use $OUTPUT->render($bar), instead use progress_bar::create().
@@ -4827,7 +4920,7 @@ EOD;
      */
     public function render_progress_bar_update(string $id, float $percent, string $msg, string $estimate,
         bool $error = false): string {
-        return html_writer::script(js_writer::function_call('updateProgressBar', [
+        return $this->script_self_removing(js_writer::function_call('updateProgressBar', [
             $id,
             round($percent, 1),
             $msg,
@@ -4963,7 +5056,9 @@ EOD;
         // Create an unclosed element for the streamed content to append into.
         $id = uniqid();
         $html .= html_writer::start_tag($element, ['id' => $id]);
-        $html .= html_writer::tag('script', "document.querySelector('$selector').append(document.getElementById('$id'))");
+        $html .= $this->script_self_removing(
+            "document.querySelector('$selector').append(document.getElementById('$id'));"
+        );
         $html .= "\n";
         return $html;
     }
@@ -5010,7 +5105,7 @@ EOD;
         // Escape html for use inside a javascript string.
         $html = addslashes_js($html);
         $property = $outer ? 'outerHTML' : 'innerHTML';
-        $output = html_writer::tag('script', "document.querySelector('$selector').$property = '$html';");
+        $output = $this->script_self_removing("document.querySelector('$selector').$property = '$html';");
         $output .= "\n";
         return $output;
     }

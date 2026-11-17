@@ -25,7 +25,7 @@
 .block .block-controls {
     .dropdown-toggle {
         /* So that the icon takes the colour of the icon. */
-        color: $body-color;
+        color: var(--#{$prefix}body-color);
     }
     .dropdown-toggle::after {
         display: none;
@@ -68,7 +68,7 @@ $blocks-plus-gutter: calc(#{$blocks-column-width} + (#{$grid-gutter-width} * 0.5
     .region_main_settings_menu_proxy {
         width: 4rem;
         height: 2rem;
-        background-color: $body-bg;
+        background-color: var(--#{$prefix}body-bg);
         margin-left: $card-spacer-x * 0.5;
         margin-bottom: $card-spacer-x * 0.5;
         border-bottom-left-radius: 0.5rem;
@@ -139,7 +139,7 @@ $blocks-plus-gutter: calc(#{$blocks-column-width} + (#{$grid-gutter-width} * 0.5
     }
     .course-summaryitem {
         border: $border-width solid $border-color;
-        background-color: $body-bg;
+        background-color: var(--#{$prefix}body-bg);
     }
     .icon {
         margin-right: 0;
@@ -149,15 +149,26 @@ $blocks-plus-gutter: calc(#{$blocks-column-width} + (#{$grid-gutter-width} * 0.5
     }
     span.categoryname,
     .btn-link {
-        color: $gray-900;
+        color: var(--#{$prefix}gray-900);
     }
     .progress-text {
-        color: $gray-600;
+        color: var(--#{$prefix}gray-600);
     }
     .multiline {
         white-space: normal;
     }
 }
+.drawercontent {
+    .card-title {
+        color: var(--#{$prefix}gray-700);
+        font-size: $h6-font-size;
+    }
+
+    .card-text {
+        color: var(--#{$prefix}gray-600);
+    }
+}
+
 .card-grid {
     display: flex;
     .card {
@@ -175,7 +186,7 @@ $blocks-plus-gutter: calc(#{$blocks-column-width} + (#{$grid-gutter-width} * 0.5
         flex: 1;
         @include media-breakpoint-up(sm) {
             flex: 0 1 auto;
-            width: 240px;
+            width: 245px;
             max-width: 100%;
         }
     }
@@ -196,7 +207,6 @@ $blocks-plus-gutter: calc(#{$blocks-column-width} + (#{$grid-gutter-width} * 0.5
 .block_recentlyaccessedcourses {
     .paging-bar-container {
         margin-top: -2.4rem;
-        padding-right: 0.5rem;
         justify-content: flex-end;
     }
     @include media-breakpoint-down(sm) {
@@ -241,7 +251,7 @@ $blocks-plus-gutter: calc(#{$blocks-column-width} + (#{$grid-gutter-width} * 0.5
             }
         }
         small {
-            color: $body-color;
+            color: var(--#{$prefix}body-color);
         }
     }
 }
@@ -281,6 +291,9 @@ $blocks-plus-gutter: calc(#{$blocks-column-width} + (#{$grid-gutter-width} * 0.5
 .block_timeline {
     .paged-content-page-container {
         background-color: $list-group-bg;
+    }
+    .list-group-item {
+        background-color: var(--#{$prefix}card-bg);
     }
 }
 .block_timeline {

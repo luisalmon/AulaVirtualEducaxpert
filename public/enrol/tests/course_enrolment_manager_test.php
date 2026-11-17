@@ -28,8 +28,8 @@ use stdClass;
  * @category   test
  * @copyright  2016 Ruslan Kabalin, Lancaster University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \course_enrolment_manager
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\course_enrolment_manager::class)]
 final class course_enrolment_manager_test extends \advanced_testcase {
     /**
      * The course used in tests.
@@ -375,7 +375,6 @@ final class course_enrolment_manager_test extends \advanced_testcase {
     /**
      * Test get_potential_users without returnexactcount param.
      *
-     * @dataProvider search_users_provider
      *
      * @param int $perpage Number of users per page.
      * @param bool $returnexactcount Return the exact count or not.
@@ -383,6 +382,7 @@ final class course_enrolment_manager_test extends \advanced_testcase {
      * @param int $expectedtotalusers Expected total of users in database.
      * @param bool $expectedmoreusers Expected for more users return or not.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('search_users_provider')]
     public function test_get_potential_users($perpage, $returnexactcount, $expectedusers, $expectedtotalusers, $expectedmoreusers): void {
         global $DB, $PAGE;
         $this->resetAfterTest();
@@ -467,9 +467,32 @@ final class course_enrolment_manager_test extends \advanced_testcase {
     }
 
     /**
+     * Test getting potential users allows searching by configured user fullname display
+     */
+    public function test_get_potential_users_fullname_display(): void {
+        global $PAGE, $DB;
+
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user(['firstname' => 'Fred', 'lastname' => 'Frogs']);
+        $this->setUser($user);
+
+        $manager = new course_enrolment_manager($PAGE, $this->course);
+        $enrol = $DB->get_record('enrol', ['enrol' => 'manual', 'courseid' => $this->course->id]);
+
+        // Default (language) fullname display.
+        $users = $manager->get_potential_users($enrol->id, 'Fred Frogs');
+        $this->assertEquals([$user->id], array_keys($users['users']));
+
+        // Switch display format.
+        set_config('fullnamedisplay', 'lastname firstname');
+        $users = $manager->get_potential_users($enrol->id, 'Frogs Fred');
+        $this->assertEquals([$user->id], array_keys($users['users']));
+    }
+
+    /**
      * Test search_other_users with returnexactcount param.
      *
-     * @dataProvider search_users_provider
      *
      * @param int $perpage Number of users per page.
      * @param bool $returnexactcount Return the exact count or not.
@@ -477,6 +500,7 @@ final class course_enrolment_manager_test extends \advanced_testcase {
      * @param int $expectedtotalusers Expected total of users in database.
      * @param bool $expectedmoreusers Expected for more users return or not.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('search_users_provider')]
     public function test_search_other_users($perpage, $returnexactcount, $expectedusers, $expectedtotalusers, $expectedmoreusers): void {
         global $PAGE;
         $this->resetAfterTest();
@@ -501,6 +525,29 @@ final class course_enrolment_manager_test extends \advanced_testcase {
     }
 
     /**
+     * Test searching others users allows searching by configured user fullname display
+     */
+    public function test_search_other_users_fullname_display(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user(['firstname' => 'Fred', 'lastname' => 'Frogs']);
+        $this->setUser($user);
+
+        $manager = new course_enrolment_manager($PAGE, $this->course);
+
+        // Default (language) fullname display.
+        $users = $manager->search_other_users('Fred Frogs');
+        $this->assertEquals([$user->id], array_keys($users['users']));
+
+        // Switch display format.
+        set_config('fullnamedisplay', 'lastname firstname');
+        $users = $manager->search_other_users('Frogs Fred');
+        $this->assertEquals([$user->id], array_keys($users['users']));
+    }
+
+    /**
      * Test case for test_get_potential_users, test_search_other_users and test_search_users tests.
      *
      * @return array Dataset
@@ -517,7 +564,6 @@ final class course_enrolment_manager_test extends \advanced_testcase {
     /**
      * Test search_users function.
      *
-     * @dataProvider search_users_provider
      *
      * @param int $perpage Number of users per page.
      * @param bool $returnexactcount Return the exact count or not.
@@ -525,6 +571,7 @@ final class course_enrolment_manager_test extends \advanced_testcase {
      * @param int $expectedtotalusers Expected total of users in database.
      * @param bool $expectedmoreusers Expected for more users return or not.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('search_users_provider')]
     public function test_search_users($perpage, $returnexactcount, $expectedusers, $expectedtotalusers, $expectedmoreusers): void {
         global $PAGE;
         $this->resetAfterTest();
@@ -550,6 +597,32 @@ final class course_enrolment_manager_test extends \advanced_testcase {
         } else {
             $this->assertArrayNotHasKey('totalusers', $users);
         }
+    }
+
+    /**
+     * Test searching users allows searching by configured user fullname display
+     */
+    public function test_search_users_fullname_display(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_and_enrol($this->course, 'student', [
+            'firstname' => 'Fred',
+            'lastname' => 'Frogs',
+        ]);
+        $this->setUser($user);
+
+        $manager = new course_enrolment_manager($PAGE, $this->course);
+
+        // Default (language) fullname display.
+        $users = $manager->search_users('Fred Frogs');
+        $this->assertEquals([$user->id], array_keys($users['users']));
+
+        // Switch display format.
+        set_config('fullnamedisplay', 'lastname firstname');
+        $users = $manager->search_users('Frogs Fred');
+        $this->assertEquals([$user->id], array_keys($users['users']));
     }
 
     /**

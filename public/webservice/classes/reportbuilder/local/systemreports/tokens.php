@@ -134,13 +134,13 @@ class tokens extends system_report {
             new lang_string('missingcaps', 'webservice'),
             'user'
         ))
-            ->add_joins($this->get_joins())
             ->set_type(column::TYPE_TEXT)
             ->add_field("{$entityuseralias}.id", 'userid')
-            ->add_fields(implode(', ', [
+            ->add_fields([
                 "{$entityservicealias}.id",
                 "{$entityservicealias}.shortname",
-            ]))
+            ])
+            ->set_is_sortable(false)
             ->add_callback(static function($value, \stdClass $row): string {
                 global $OUTPUT;
 

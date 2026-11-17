@@ -28,6 +28,29 @@ use function PHPUnit\Framework\assertEquals;
  * @author     T.J.Hunt@open.ac.uk
  * @author     nicolas@moodle.com
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core\param::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\clean_param::class)]
+#[\PHPUnit\Framework\Attributes\CoversFunction('calculate_entropy')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('email_to_user')]
+#[\PHPUnit\Framework\Attributes\CoversClass(\get_time_interval_string::class)]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_home_page')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_default_home_page')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_default_home_page_url')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_performance_info')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('html_is_blank')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('moodle_array_keys_filter')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('send_password_change_info')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('send_confirmation_email')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('setnew_password_and_mail')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('send_password_change_confirmation_email')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_string_manager')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('component_callback_exists')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('component_callback')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('component_class_callback')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_plugins_with_function')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_plugin_list_with_function')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_mailer')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('should_vary_by_accept_language')]
 final class moodlelib_test extends \advanced_testcase {
 
     use fake_plugins_test_trait;
@@ -317,10 +340,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertDebuggingCalled();
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param(): void {
         // Forbid objects and arrays.
         try {
@@ -347,10 +366,6 @@ final class moodlelib_test extends \advanced_testcase {
         }
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_array(): void {
         $this->assertSame(array(), clean_param_array(null, PARAM_RAW));
         $this->assertSame(array('a', 'b'), clean_param_array(array('a', 'b'), PARAM_RAW));
@@ -374,10 +389,6 @@ final class moodlelib_test extends \advanced_testcase {
         // Test recursive.
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_raw(): void {
         $this->assertSame(
             '#()*#,9789\'".,<42897></?$(*DSFMO#$*)(SDJ)($*)',
@@ -385,19 +396,11 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame(null, clean_param(null, PARAM_RAW));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_trim(): void {
         $this->assertSame('Frog toad', clean_param("   Frog toad   \r\n  ", PARAM_RAW_TRIMMED));
         $this->assertSame('', clean_param(null, PARAM_RAW_TRIMMED));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_clean(): void {
         // PARAM_CLEAN is an ugly hack, do not use in new code (skodak),
         // instead use more specific type, or submit sothing that can be verified properly.
@@ -406,37 +409,21 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_CLEANHTML));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_alpha(): void {
         $this->assertSame('DSFMOSDJ', clean_param('#()*#,9789\'".,<42897></?$(*DSFMO#$*)(SDJ)($*)', PARAM_ALPHA));
         $this->assertSame('', clean_param(null, PARAM_ALPHA));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_alphanum(): void {
         $this->assertSame('978942897DSFMOSDJ', clean_param('#()*#,9789\'".,<42897></?$(*DSFMO#$*)(SDJ)($*)', PARAM_ALPHANUM));
         $this->assertSame('', clean_param(null, PARAM_ALPHANUM));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_alphaext(): void {
         $this->assertSame('DSFMOSDJ', clean_param('#()*#,9789\'".,<42897></?$(*DSFMO#$*)(SDJ)($*)', PARAM_ALPHAEXT));
         $this->assertSame('', clean_param(null, PARAM_ALPHAEXT));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_bool(): void {
         $this->assertSame(0, clean_param(false, PARAM_BOOL));
         $this->assertSame(0, clean_param(0, PARAM_BOOL));
@@ -444,19 +431,11 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame(1, clean_param(1, PARAM_BOOL));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_sequence(): void {
         $this->assertSame(',9789,42897', clean_param('#()*#,9789\'".,<42897></?$(*DSFMO#$*)(SDJ)($*)', PARAM_SEQUENCE));
         $this->assertSame('', clean_param(null, PARAM_SEQUENCE));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_component(): void {
         // Please note the cleaning of component names is very strict, no guessing here.
         $this->assertSame('mod_forum', clean_param('mod_forum', PARAM_COMPONENT));
@@ -486,10 +465,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_COMPONENT));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_localisedfloat(): void {
 
         $this->assertSame(0.5, clean_param('0.5', PARAM_LOCALISEDFLOAT));
@@ -539,10 +514,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertFalse(is_valid_plugin_name('xx_'));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_plugin(): void {
         // Please note the cleaning of plugin names is very strict, no guessing here.
         $this->assertSame('forum', clean_param('forum', PARAM_PLUGIN));
@@ -561,10 +532,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_PLUGIN));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_area(): void {
         // Please note the cleaning of area names is very strict, no guessing here.
         $this->assertSame('something', clean_param('something', PARAM_AREA));
@@ -582,10 +549,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_AREA));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_text(): void {
         // Standard.
         $this->assertSame('xx<lang lang="en">aa</lang><lang lang="yy">pp</lang>', clean_param('xx<lang lang="en">aa</lang><lang lang="yy">pp</lang>', PARAM_TEXT));
@@ -631,19 +594,13 @@ final class moodlelib_test extends \advanced_testcase {
      * @param string $param
      * @param string $expected
      *
-     * @dataProvider clean_param_host_provider
      *
-     * @covers \core\param
-     * @covers \clean_param
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('clean_param_host_provider')]
     public function test_clean_param_host(string $param, string $expected): void {
         $this->assertEquals($expected, clean_param($param, PARAM_HOST));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_url(): void {
         // Test PARAM_URL and PARAM_LOCALURL a bit.
         // Valid URLs.
@@ -670,10 +627,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_URL));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_localurl(): void {
         global $CFG;
 
@@ -717,10 +670,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_LOCALURL));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_file(): void {
         $this->assertSame('correctfile.txt', clean_param('correctfile.txt', PARAM_FILE));
         $this->assertSame('badfile.txt', clean_param('b\'a<d`\\/fi:l>e.t"x|t', PARAM_FILE));
@@ -753,10 +702,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('~myfile.txt', clean_param('~/myfile.txt', PARAM_FILE));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_path(): void {
         $this->assertSame('correctfile.txt', clean_param('correctfile.txt', PARAM_PATH));
         $this->assertSame('bad/file.txt', clean_param('b\'a<d`\\/fi:l>e.t"x|t', PARAM_PATH));
@@ -778,20 +723,12 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_PATH));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_safepath(): void {
         $this->assertSame('folder/file', clean_param('folder/file', PARAM_SAFEPATH));
         $this->assertSame('folder//file', clean_param('folder/../file', PARAM_SAFEPATH));
         $this->assertSame('', clean_param(null, PARAM_SAFEPATH));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_username(): void {
         global $CFG;
         $currentstatus =  $CFG->extendedusernamechars;
@@ -827,10 +764,6 @@ final class moodlelib_test extends \advanced_testcase {
         $CFG->extendedusernamechars = $currentstatus;
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_stringid(): void {
         // Test string identifiers validation.
         // Valid strings.
@@ -848,10 +781,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertSame('', clean_param(null, PARAM_STRINGID));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_timezone(): void {
         // Test timezone validation.
         $testvalues = array (
@@ -897,10 +826,6 @@ final class moodlelib_test extends \advanced_testcase {
         $this->assertEquals('', clean_param(null, PARAM_TIMEZONE));
     }
 
-    /**
-     * @covers \core\param
-     * @covers \clean_param
-     */
     public function test_clean_param_null_argument(): void {
         $this->assertEquals(0, clean_param(null, PARAM_INT));
         $this->assertEquals(0, clean_param(null, PARAM_FLOAT));
@@ -1221,13 +1146,13 @@ final class moodlelib_test extends \advanced_testcase {
     /**
      * Test the {@link shorten_filename()} method.
      *
-     * @dataProvider shorten_filename_provider
      *
      * @param string $filename
      * @param int $length
      * @param string $expected
      * @param boolean $includehash
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('shorten_filename_provider')]
     public function test_shorten_filename($filename, $length, $expected, $includehash): void {
         if (null === $length) {
             $length = MAX_FILENAME_SIZE;
@@ -1352,13 +1277,13 @@ final class moodlelib_test extends \advanced_testcase {
     /**
      * Test the {@link shorten_filenames()} method.
      *
-     * @dataProvider shorten_filenames_provider
      *
      * @param array $filenames
      * @param int $length
      * @param string $expected
      * @param boolean $includehash
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('shorten_filenames_provider')]
     public function test_shorten_filenames($filenames, $length, $expected, $includehash): void {
         if (null === $length) {
             $length = MAX_FILENAME_SIZE;
@@ -2699,25 +2624,7 @@ EOF;
     }
 
     /**
-     * Test function password_is_legacy_hash.
-     * @covers ::password_is_legacy_hash
-     */
-    public function test_password_is_legacy_hash(): void {
-        // Well formed bcrypt hashes should be matched.
-        foreach (array('some', 'strings', 'to_check!') as $password) {
-            $bcrypt = password_hash($password, '2y');
-            $this->assertTrue(password_is_legacy_hash($bcrypt));
-        }
-        // Strings that are not bcrypt should not be matched.
-        $sha512 = '$6$rounds=5000$somesalt$9nEA35u5h4oDrUdcVFUwXDSwIBiZtuKDHiaI/kxnBSslH4wVXeAhVsDn1UFxBxrnRJva/8dZ8IouaijJdd4cF';
-        foreach (array('', AUTH_PASSWORD_NOT_CACHED, $sha512) as $notbcrypt) {
-            $this->assertFalse(password_is_legacy_hash($notbcrypt));
-        }
-    }
-
-    /**
      * Test function that calculates password pepper entropy.
-     * @covers ::calculate_entropy
      */
     public function test_calculate_entropy(): void {
         // Test that the function returns 0 with an empty string.
@@ -2725,288 +2632,6 @@ EOF;
 
         // Test that the function returns the correct entropy.
         $this->assertEquals(132.8814, number_format(calculate_entropy('#GV]NLie|x$H9[$rW%94bXZvJHa%z'), 4));
-    }
-
-    /**
-     * Test function to get password peppers.
-     * @covers ::get_password_peppers
-     */
-    public function test_get_password_peppers(): void {
-        global $CFG;
-        $this->resetAfterTest();
-
-        // First assert that the function returns an empty array,
-        // when no peppers are set.
-        $this->assertEquals([], get_password_peppers());
-
-        // Now set some peppers and check that they are returned.
-        $CFG->passwordpeppers = [
-                1 => '#GV]NLie|x$H9[$rW%94bXZvJHa%z',
-                2 => '#GV]NLie|x$H9[$rW%94bXZvJHa%$'
-        ];
-        $peppers = get_password_peppers();
-        $this->assertCount(2, $peppers);
-        $this->assertEquals($CFG->passwordpeppers, $peppers);
-
-        // Check that the peppers are returned in the correct order.
-        // Highest numerical key first.
-        $this->assertEquals('#GV]NLie|x$H9[$rW%94bXZvJHa%$', $peppers[2]);
-        $this->assertEquals('#GV]NLie|x$H9[$rW%94bXZvJHa%z', $peppers[1]);
-
-        // Update the latest pepper to be an empty string,
-        // to test phasing out peppers.
-        $CFG->passwordpeppers = [
-                1 => '#GV]NLie|x$H9[$rW%94bXZvJHa%z',
-                2 => '#GV]NLie|x$H9[$rW%94bXZvJHa%$',
-                3 => ''
-        ];
-        $peppers = get_password_peppers();
-        $this->assertCount(3, $peppers);
-        $this->assertEquals($CFG->passwordpeppers, $peppers);
-
-        // Finally, check that low entropy peppers throw an exception.
-        $CFG->passwordpeppers = [
-                1 => 'foo',
-                2 => 'bar'
-        ];
-        $this->expectException(\coding_exception::class);
-        get_password_peppers();
-    }
-
-    /**
-     * Test function to validate password length.
-     *
-     * @covers ::exceeds_password_length
-     * @return void
-     */
-    public function test_exceeds_password_length(): void {
-        $this->resetAfterTest(true);
-
-        // With password less than equals to MAX_PASSWORD_CHARACTERS.
-        $this->assertFalse(exceeds_password_length('test'));
-
-        // With password more than MAX_PASSWORD_CHARACTERS.
-        $password = 'thisisapasswordthatcontainscharactersthatcan';
-        $password .= 'exeedthepasswordlengthof128thisispasswordthatcont';
-        $password .= 'ainscharactersthatcanexeedthelength-----';
-        $this->assertTrue(exceeds_password_length($password));
-    }
-
-    /**
-     * Test function validate_internal_user_password.
-     * @covers ::validate_internal_user_password
-     */
-    public function test_validate_internal_user_password(): void {
-        $this->resetAfterTest(true);
-        // Test bcrypt hashes (these will be updated but will still count as valid).
-        $bcrypthashes = [
-            'pw' => '$2y$10$LOSDi5eaQJhutSRun.OVJ.ZSxQZabCMay7TO1KmzMkDMPvU40zGXK',
-            'abc' => '$2y$10$VWTOhVdsBbWwtdWNDRHSpewjd3aXBQlBQf5rBY/hVhw8hciarFhXa',
-            'C0mP1eX_&}<?@*&%` |\"' => '$2y$10$3PJf.q.9ywNJlsInPbqc8.IFeSsvXrGvQLKRFBIhVu1h1I3vpIry6',
-            'ĩńťėŕňăţĩōŋāĹ' => '$2y$10$3A2Y8WpfRAnP3czJiSv6N.6Xp0T8hW3QZz2hUCYhzyWr1kGP1yUve',
-        ];
-
-        // Test sha512 hashes.
-        $sha512hashes = [
-            'pw2' => '$6$rounds=10000$0rDIzh/4.MMf9Dm8$Zrj6Ulc1JFj0RFXwMJFsngRSNGlqkPlV1wwRVv7wBLrMeQeMZrwsBO62zy63D//6R5sNGVYQwPB0K8jPCScxB/',
-            'abc2' => '$6$rounds=10000$t0L6PklgpijV4tMB$1vpCRKCImsVqTPMiZTi6zLGbs.hpAU8I2BhD/IFliBnHJkFZCWEBfTCq6pEzo0Q8nXsryrgeZ.qngcW.eifuW.',
-            'C0mP1eX_&}<?@*&%` |\"2' => '$6$rounds=10000$3TAyVAXN0zmFZ4il$KF8YzduX6Gu0C2xHsY83zoqQ/rLVsb9mLe417wDObo9tO00qeUC68/y2tMq4FL2ixnMPH3OMwzGYo8VJrm8Eq1',
-            'ĩńťėŕňăţĩōŋāĹ2' => '$6$rounds=10000$SHR/6ctTkfXOy5NP$YPv42hjDjohVWD3B0boyEYTnLcBXBKO933ijHmkPXNL7BpqAcbYMLfTl9rjsPmCt.1GZvEJZ8ikkCPYBC5Sdp.',
-        ];
-
-        $validhashes = array_merge($bcrypthashes, $sha512hashes);
-
-        foreach ($validhashes as $password => $hash) {
-            $user = $this->getDataGenerator()->create_user(array('auth' => 'manual', 'password' => $password));
-            $user->password = $hash;
-            // The correct password should be validated.
-            $this->assertTrue(validate_internal_user_password($user, $password));
-            // An incorrect password should not be validated.
-            $this->assertFalse(validate_internal_user_password($user, 'badpw'));
-        }
-    }
-
-    /**
-     * Test function validate_internal_user_password() with a peppered password,
-     * when the pepper no longer exists.
-     *
-     * @covers ::validate_internal_user_password
-     */
-    public function test_validate_internal_user_password_bad_pepper(): void {
-        global $CFG;
-        $this->resetAfterTest();
-
-        // Set a pepper.
-        $CFG->passwordpeppers = [
-                1 => '#GV]NLie|x$H9[$rW%94bXZvJHa%z',
-                2 => '#GV]NLie|x$H9[$rW%94bXZvJHa%$'
-        ];
-        $password = 'test';
-
-        $user = $this->getDataGenerator()->create_user(['auth' => 'manual', 'password' => $password]);
-        $this->assertTrue(validate_internal_user_password($user, $password));
-        $this->assertFalse(validate_internal_user_password($user, 'badpw'));
-
-        // Now remove the peppers.
-        // Things should not work.
-        unset($CFG->passwordpeppers);
-        $this->assertFalse(validate_internal_user_password($user, $password));
-    }
-
-    /**
-     * Helper method to test hashing passwords.
-     *
-     * @param array $passwords
-     * @return void
-     * @covers ::hash_internal_user_password
-     */
-    public function validate_hashed_passwords(array $passwords): void {
-        foreach ($passwords as $password) {
-            $hash = hash_internal_user_password($password);
-            $fasthash = hash_internal_user_password($password, true);
-            $user = $this->getDataGenerator()->create_user(['auth' => 'manual']);
-            $user->password = $hash;
-            $this->assertTrue(validate_internal_user_password($user, $password));
-
-            // They should not be in bycrypt format.
-            $this->assertFalse(password_is_legacy_hash($hash));
-
-            // Check that cost factor in hash is correctly set.
-            $this->assertMatchesRegularExpression('/\$6\$rounds=10000\$.{103}/', $hash);
-            $this->assertMatchesRegularExpression('/\$6\$rounds=5000\$.{103}/', $fasthash);
-        }
-    }
-
-    /**
-     * Test function update_internal_user_password.
-     * @covers ::update_internal_user_password
-     */
-    public function test_hash_internal_user_password(): void {
-        global $CFG;
-        $this->resetAfterTest();
-        $passwords = ['pw', 'abc123', 'C0mP1eX_&}<?@*&%` |\"', 'ĩńťėŕňăţĩōŋāĹ'];
-
-        // Check that some passwords that we convert to hashes can
-        // be validated.
-        $this->validate_hashed_passwords($passwords);
-
-        // Test again with peppers.
-        $CFG->passwordpeppers = [
-                1 => '#GV]NLie|x$H9[$rW%94bXZvJHa%z',
-                2 => '#GV]NLie|x$H9[$rW%94bXZvJHa%$'
-        ];
-        $this->validate_hashed_passwords($passwords);
-
-        // Add a new pepper and check that things still pass.
-        $CFG->passwordpeppers = [
-                1 => '#GV]NLie|x$H9[$rW%94bXZvJHa%z',
-                2 => '#GV]NLie|x$H9[$rW%94bXZvJHa%$',
-                3 => '#GV]NLie|x$H9[$rW%94bXZvJHQ%$'
-        ];
-        $this->validate_hashed_passwords($passwords);
-    }
-
-    /**
-     * Test function update_internal_user_password().
-     */
-    public function test_update_internal_user_password(): void {
-        global $DB;
-        $this->resetAfterTest();
-        $passwords = array('password', '1234', 'changeme', '****');
-        foreach ($passwords as $password) {
-            $user = $this->getDataGenerator()->create_user(array('auth'=>'manual'));
-            update_internal_user_password($user, $password);
-            // The user object should have been updated.
-            $this->assertTrue(validate_internal_user_password($user, $password));
-            // The database field for the user should also have been updated to the
-            // same value.
-            $this->assertSame($user->password, $DB->get_field('user', 'password', array('id' => $user->id)));
-        }
-
-        $user = $this->getDataGenerator()->create_user(array('auth'=>'manual'));
-        // Manually set the user's password to the bcrypt of the string 'password'.
-        $DB->set_field('user', 'password', '$2y$10$HhNAYmQcU1GqU/psOmZjfOWlhPEcxx9aEgSJqBfEtYVyq1jPKqMAi', ['id' => $user->id]);
-
-        $sink = $this->redirectEvents();
-        // Update the password.
-        update_internal_user_password($user, 'password');
-        $events = $sink->get_events();
-        $sink->close();
-        $event = array_pop($events);
-
-        // Password should have been updated to a SHA512 hash.
-        $this->assertFalse(password_is_legacy_hash($user->password));
-
-        // Verify event information.
-        $this->assertInstanceOf('\core\event\user_password_updated', $event);
-        $this->assertSame($user->id, $event->relateduserid);
-        $this->assertEquals(\context_user::instance($user->id), $event->get_context());
-        $this->assertEventContextNotUsed($event);
-
-        // Verify recovery of property 'auth'.
-        unset($user->auth);
-        update_internal_user_password($user, 'newpassword');
-        $this->assertDebuggingCalled('User record in update_internal_user_password() must include field auth',
-                DEBUG_DEVELOPER);
-        $this->assertEquals('manual', $user->auth);
-    }
-
-    /**
-     * Testing that if the password is not cached, that it does not update
-     * the user table and fire event.
-     *
-     * @dataProvider update_internal_user_password_no_cache_provider
-     * @covers ::update_internal_user_password
-     *
-     * @param string $authmethod The authentication method to set for the user.
-     * @param string|null $password The new password to set for the user.
-     */
-    public function test_update_internal_user_password_no_cache(
-        string $authmethod,
-        ?string $password,
-    ): void {
-        global $DB;
-        $this->resetAfterTest();
-
-        $user = $this->getDataGenerator()->create_user(['auth' => $authmethod]);
-        $DB->update_record('user', ['id' => $user->id, 'password' => AUTH_PASSWORD_NOT_CACHED]);
-        $user->password = AUTH_PASSWORD_NOT_CACHED;
-
-        $sink = $this->redirectEvents();
-        update_internal_user_password($user, $password);
-        $this->assertEquals(0, $sink->count(), 'User updated event should not fire');
-    }
-
-    /**
-     * The data provider will test the {@see test_update_internal_user_password_no_cache}
-     * for accounts using the authentication method with prevent_local_passwords set to true (no cache).
-     *
-     * @return array
-     */
-    public static function update_internal_user_password_no_cache_provider(): array {
-        return [
-            'Password is not empty' => ['db', 'wonkawonka'],
-            'Password is an empty string' => ['oauth2', ''],
-            'Password is null' => ['oauth2', null],
-        ];
-    }
-
-    /**
-     * Test if the user has a password hash, but now their auth method
-     * says not to cache it.  Then it should update.
-     */
-    public function test_update_internal_user_password_update_no_cache(): void {
-        $this->resetAfterTest();
-
-        $user = $this->getDataGenerator()->create_user(array('password' => 'test'));
-        $this->assertNotEquals(AUTH_PASSWORD_NOT_CACHED, $user->password);
-        $user->auth = 'db'; // Change to a auth that does not store passwords.
-
-        $sink = $this->redirectEvents();
-        update_internal_user_password($user, 'wonkawonka');
-        $this->assertGreaterThanOrEqual(1, $sink->count(), 'User updated event should fire');
-
-        $this->assertEquals(AUTH_PASSWORD_NOT_CACHED, $user->password);
     }
 
     public function test_fullname(): void {
@@ -3267,11 +2892,11 @@ EOF;
     /**
      * Test email message id generation
      *
-     * @dataProvider generate_email_messageid_provider
      *
      * @param string $wwwroot The wwwroot
      * @param array $msgids An array of msgid local parts and the final result
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('generate_email_messageid_provider')]
     public function test_generate_email_messageid($wwwroot, $msgids): void {
         global $CFG;
 
@@ -3404,13 +3029,13 @@ EOF;
     /**
      * Test email diversion
      *
-     * @dataProvider diverted_emails_provider
      *
      * @param string $divertallemailsto An optional email address
      * @param string $divertallemailsexcept An optional exclusion list
      * @param array $addresses An array of test addresses
      * @param boolean $expected Expected result
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('diverted_emails_provider')]
     public function test_email_should_be_diverted($divertallemailsto, $divertallemailsexcept, $addresses, $expected): void {
         global $CFG;
 
@@ -3541,9 +3166,8 @@ EOF;
      * Test sending attachments with email_to_user
      *
      * @param string|null $filedir
-     *
-     * @dataProvider email_to_user_attachment_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('email_to_user_attachment_provider')]
     public function test_email_to_user_attachment(?string $filedir): void {
         global $CFG;
 
@@ -3603,8 +3227,6 @@ EOF;
 
     /**
      * Test sending calendar (ICS) file attachments with email_to_user
-     *
-     * @covers ::email_to_user
      */
     public function test_email_to_user_calendar_attachment(): void {
         global $CFG;
@@ -3761,11 +3383,11 @@ EOF;
 
     /**
      * Test generate_confirmation_link
-     * @dataProvider generate_confirmation_link_provider
      * @param string $username The name of the user
      * @param string $confirmationurl The url the user should go to to confirm
      * @param string $expected The expected url of the confirmation link
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('generate_confirmation_link_provider')]
     public function test_generate_confirmation_link($username, $confirmationurl, $expected): void {
         $this->resetAfterTest();
         $sink = $this->redirectEmails();
@@ -3924,11 +3546,11 @@ EOF;
     /**
      * Test function {@see count_words()}.
      *
-     * @dataProvider count_words_testcases
      * @param int $expectedcount number of words in $string.
      * @param string $string the test string to count the words of.
      * @param int|null $format FORMAT_... constant to pass to count_words.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('count_words_testcases')]
     public function test_count_words(int $expectedcount, string $string, $format = null): void {
         $this->assertEquals($expectedcount, count_words($string, $format),
             "'$string' with format '$format' does not match count $expectedcount");
@@ -4003,11 +3625,11 @@ EOT;
     /**
      * Test function {@see count_letters()}.
      *
-     * @dataProvider count_letters_testcases
      * @param int $expectedcount number of characters in $string.
      * @param string $string the test string to count the letters of.
      * @param int|null $format
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('count_letters_testcases')]
     public function test_count_letters(int $expectedcount, string $string, $format = null): void {
         $this->assertEquals($expectedcount, count_letters($string, $format),
             "'$string' with format '$format' does not match count $expectedcount");
@@ -4199,8 +3821,8 @@ EOT;
      * Checks ip_is_public returns false for private ips.
      *
      * @param string $ip the ipaddress to test
-     * @dataProvider data_private_ips
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('data_private_ips')]
     public function test_ip_is_public_private_ips($ip): void {
         $this->assertFalse(ip_is_public($ip));
     }
@@ -4221,8 +3843,8 @@ EOT;
      * Checks ip_is_public returns true for public ips.
      *
      * @param string $ip the ipaddress to test
-     * @dataProvider data_public_ips
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('data_public_ips')]
     public function test_ip_is_public_public_ips($ip): void {
         $this->assertTrue(ip_is_public($ip));
     }
@@ -4235,8 +3857,8 @@ EOT;
      * @param bool $samecourse Are the users in the same course?
      * @param string $config The CFG->allowedemaildomains config values
      * @param bool $result The expected result.
-     * @dataProvider data_can_send_from_real_email_address
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('data_can_send_from_real_email_address')]
     public function test_can_send_from_real_email_address($email, $display, $samecourse, $config, $result): void {
         $this->resetAfterTest();
 
@@ -4392,9 +4014,8 @@ EOT;
      * @param string $email Email address for the from user.
      * @param string $config The CFG->allowemailaddresses config values
      * @param false/string $result The expected result.
-     *
-     * @dataProvider data_email_is_not_allowed_for_allowemailaddresses
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('data_email_is_not_allowed_for_allowemailaddresses')]
     public function test_email_is_not_allowed_for_allowemailaddresses($email, $config, $result): void {
         $this->resetAfterTest();
 
@@ -4470,9 +4091,8 @@ EOT;
      * @param string $email Email address for the from user.
      * @param string $config The CFG->denyemailaddresses config values
      * @param false/string $result The expected result.
-     *
-     * @dataProvider data_email_is_not_allowed_for_denyemailaddresses
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('data_email_is_not_allowed_for_denyemailaddresses')]
     public function test_email_is_not_allowed_for_denyemailaddresses($email, $config, $result): void {
         $this->resetAfterTest();
 
@@ -4601,9 +4221,9 @@ EOT;
     /**
      * Test that the component_class_callback returns the correct default value when the class was not found.
      *
-     * @dataProvider component_class_callback_default_provider
      * @param $default
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('component_class_callback_default_provider')]
     public function test_component_class_callback_not_found($default): void {
         $this->assertSame($default, component_class_callback('thisIsNotTheClassYouWereLookingFor', 'anymethod', [], $default));
     }
@@ -4611,9 +4231,9 @@ EOT;
     /**
      * Test that the component_class_callback returns the correct default value when the class was not found.
      *
-     * @dataProvider component_class_callback_default_provider
      * @param $default
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('component_class_callback_default_provider')]
     public function test_component_class_callback_method_not_found($default): void {
         require_once(__DIR__ . '/fixtures/component_class_callback_example.php');
 
@@ -4623,9 +4243,9 @@ EOT;
     /**
      * Test that the component_class_callback returns the default when the method returned null.
      *
-     * @dataProvider component_class_callback_default_provider
      * @param $default
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('component_class_callback_default_provider')]
     public function test_component_class_callback_found_returns_null($default): void {
         require_once(__DIR__ . '/fixtures/component_class_callback_example.php');
 
@@ -4636,9 +4256,9 @@ EOT;
     /**
      * Test that the component_class_callback returns the expected value and not the default when there was a value.
      *
-     * @dataProvider component_class_callback_data_provider
      * @param $default
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('component_class_callback_data_provider')]
     public function test_component_class_callback_found_returns_value($value): void {
         require_once(__DIR__ . '/fixtures/component_class_callback_example.php');
 
@@ -4649,9 +4269,9 @@ EOT;
     /**
      * Test that the component_class_callback handles multiple params correctly.
      *
-     * @dataProvider component_class_callback_multiple_params_provider
      * @param $default
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('component_class_callback_multiple_params_provider')]
     public function test_component_class_callback_found_accepts_multiple($params, $count): void {
         require_once(__DIR__ . '/fixtures/component_class_callback_example.php');
 
@@ -4727,10 +4347,10 @@ EOT;
     /**
      * Test that {@link get_callable_name()} describes the callable as expected.
      *
-     * @dataProvider callable_names_provider
      * @param callable $callable
      * @param string $expectedname
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('callable_names_provider')]
     public function test_get_callable_name($callable, $expectedname): void {
         $this->assertSame($expectedname, get_callable_name($callable));
     }
@@ -4826,13 +4446,13 @@ EOT;
     /**
      * Test for get_complete_user_data().
      *
-     * @dataProvider user_data_provider
      * @param string $field The field to use for the query.
      * @param string|boolean $value The field value. When fetching by ID, set true to fetch valid user ID, false otherwise.
      * @param boolean $success Whether we expect for the fetch to succeed or return false.
      * @param int $allowaccountssameemail Value for $CFG->allowaccountssameemail.
      * @param string $expectedexception The exception to be expected.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('user_data_provider')]
     public function test_get_complete_user_data($field, $value, $success, $allowaccountssameemail = 0, $expectedexception = ''): void {
         $this->resetAfterTest();
 
@@ -4899,15 +4519,14 @@ EOT;
     /**
      * Test the get_time_interval_string for a range of inputs.
      *
-     * @dataProvider get_time_interval_string_provider
      * @param int $time1 the time1 param.
      * @param int $time2 the time2 param.
      * @param string|null $format the format param.
      * @param string $expected the expected string.
      * @param bool $dropzeroes the value passed for the `$dropzeros` param.
      * @param bool $fullformat the value passed for the `$fullformat` param.
-     * @covers \get_time_interval_string
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('get_time_interval_string_provider')]
     public function test_get_time_interval_string(int $time1, int $time2, ?string $format, string $expected,
             bool $dropzeroes = false, bool $fullformat = false): void {
         if (is_null($format)) {
@@ -5105,10 +4724,10 @@ EOT;
 
     /**
      * Test display_size
-     * @dataProvider display_size_provider
      * @param int $size the size in bytes
      * @param string $expected the expected string.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('display_size_provider')]
     public function test_display_size($size, $expected): void {
         $result = display_size($size);
         $expected = str_replace(' ', "\xc2\xa0", $expected); // Should be non-breaking space.
@@ -5134,11 +4753,11 @@ EOT;
     /**
      * Test display_size using fixed units.
      *
-     * @dataProvider display_size_fixed_provider
      * @param int $size Size in bytes
      * @param string $units Fixed units
      * @param string $expected Expected string.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('display_size_fixed_provider')]
     public function test_display_size_fixed(int $size, string $units, string $expected): void {
         $result = display_size($size, 1, $units);
         $expected = str_replace(' ', "\xc2\xa0", $expected); // Should be non-breaking space.
@@ -5163,12 +4782,12 @@ EOT;
     /**
      * Test display_size using specified decimal places.
      *
-     * @dataProvider display_size_dp_provider
      * @param int $size Size in bytes
      * @param int $places Number of decimal places
      * @param string $units Fixed units
      * @param string $expected Expected string.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('display_size_dp_provider')]
     public function test_display_size_dp(int $size, int $places, string $units, string $expected): void {
         $result = display_size($size, $places, $units);
         $expected = str_replace(' ', "\xc2\xa0", $expected); // Should be non-breaking space.
@@ -5178,12 +4797,12 @@ EOT;
     /**
      * Test that the get_list_of_plugins function includes/excludes directories as appropriate.
      *
-     * @dataProvider get_list_of_plugins_provider
      * @param   array $expectedlist The expected list of folders
      * @param   array $content The list of file content to set up in the virtual file root
      * @param   string $dir The base dir to look at in the virtual file root
      * @param   string $exclude Any additional folder to exclude
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('get_list_of_plugins_provider')]
     public function test_get_list_of_plugins(array $expectedlist, array $content, string $dir, string $exclude): void {
         $vfileroot = \org\bovigo\vfs\vfsStream::setup('root', null, $content);
         $base = \org\bovigo\vfs\vfsStream::url('root');
@@ -5272,7 +4891,6 @@ EOT;
     /**
      * Test get_home_page() method.
      *
-     * @dataProvider get_home_page_provider
      * @param string $user Whether the user is logged, guest or not logged.
      * @param int $expected Expected value after calling the get_home_page method.
      * @param int|string|null $defaulthomepage The $CFG->defaulthomepage setting value.
@@ -5281,8 +4899,8 @@ EOT;
      * $param int|null $allowguestmymoodle The $CFG->allowguestmymoodle setting value.
      * @param int|null $enablemycourses Whether my courses should be enabled or not.
      * @param int|null $enablemyhome Whether the home page should be enabled or not.
-     * @covers ::get_home_page
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('get_home_page_provider')]
     public function test_get_home_page(
         string $user,
         int $expected,
@@ -5486,8 +5104,6 @@ EOT;
 
     /**
      * Test get_default_home_page() method.
-     *
-     * @covers ::get_default_home_page
      */
     public function test_get_default_home_page(): void {
         global $CFG;
@@ -5532,8 +5148,6 @@ EOT;
 
     /**
      * Test getting default home page for {@see HOMEPAGE_URL}
-     *
-     * @covers ::get_default_home_page_url
      */
     public function test_get_default_home_page_url(): void {
         global $CFG;
@@ -5565,8 +5179,6 @@ EOT;
 
     /**
      * Tests the get_performance_info function with regard to locks.
-     *
-     * @covers ::get_performance_info
      */
     public function test_get_performance_info_locks(): void {
         global $PERF;
@@ -5614,8 +5226,6 @@ EOT;
 
     /**
      * Tests the get_performance_info function with regard to session wait time.
-     *
-     * @covers ::get_performance_info
      */
     public function test_get_performance_info_session_wait(): void {
         global $PERF;
@@ -5635,8 +5245,6 @@ EOT;
 
     /**
      * Test the html_is_blank() function.
-     *
-     * @covers ::html_is_blank
      */
     public function test_html_is_blank(): void {
         $this->assertEquals(true, html_is_blank(null));
@@ -5742,11 +5350,11 @@ EOT;
      * Check if $url matches anything in proxybypass list
      *
      * Test function {@see is_proxybypass()}.
-     * @dataProvider is_proxybypass_provider
      * @param string $url url to check
      * @param string $proxybypass
      * @param bool $expected Expected value.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('is_proxybypass_provider')]
     public function test_is_proxybypass(string $url, string $proxybypass, bool $expected): void {
         $this->resetAfterTest();
 
@@ -5761,13 +5369,12 @@ EOT;
      * Test that the moodle_array_keys_filter method behaves in the same way
      * that array_keys behaved before Moodle 8.3.
      *
-     * @dataProvider moodle_array_keys_filter_provider
      * @param array $array
      * @param mixed $filter
      * @param bool $strict
      * @param array $expected
-     * @covers ::moodle_array_keys_filter
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('moodle_array_keys_filter_provider')]
     public function test_moodle_array_keys_filter(
         array $array,
         mixed $filter,
@@ -5844,14 +5451,10 @@ EOT;
     /**
      * Test case for checking the email greetings in various user notification emails.
      *
-     * @dataProvider email_greetings_provider
      * @param string $funcname The name of the function to call for sending the email.
      * @param mixed $extra Any extra parameter required by the function.
-     * @covers ::send_password_change_info()
-     * @covers ::send_confirmation_email()
-     * @covers ::setnew_password_and_mail()
-     * @covers ::send_password_change_confirmation_email()
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('email_greetings_provider')]
     public function test_email_greetings($funcname, $extra): void {
         $this->resetAfterTest();
 
@@ -5885,16 +5488,10 @@ EOT;
     /**
      * Test various moodlelib functions when dealing with a deprecated plugin type.
      *
-     * @runInSeparateProcess
      *
-     * @covers ::get_string_manager
-     * @covers ::component_callback_exists
-     * @covers ::component_callback
-     * @covers ::component_class_callback
-     * @covers ::get_plugins_with_function
-     * @covers ::get_plugin_list_with_function
      * @return void
      */
+    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
     public function test_moodlelib_deprecated_plugintype(): void {
         $this->resetAfterTest();
         global $CFG;
@@ -5928,16 +5525,10 @@ EOT;
     /**
      * Test various moodlelib functions when dealing with a deleted plugin type.
      *
-     * @runInSeparateProcess
      *
-     * @covers ::get_string_manager
-     * @covers ::component_callback_exists
-     * @covers ::component_callback
-     * @covers ::component_class_callback
-     * @covers ::get_plugins_with_function
-     * @covers ::get_plugin_list_with_function
      * @return void
      */
+    #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
     public function test_moodlelib_deleted_plugintype(): void {
         $this->resetAfterTest();
         global $CFG;
@@ -5973,12 +5564,12 @@ EOT;
     /**
      * Test that plugin_supports returns the correct purpose values for activity plugins.
      *
-     * @dataProvider provider_plugin_supports_purpose
      * @param string $modname
      * @param string $purpose
      * @param string|null $otherpurpose
      * @return void
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('provider_plugin_supports_purpose')]
     public function test_plugin_supports_purpose(
         string $modname,
         string $purpose,
@@ -5999,8 +5590,6 @@ EOT;
      * Test MessageID is reset when sending messages in bulk.
      *
      * Ensures that each outgoing mail is assigned a unique MessageID.
-     *
-     * @covers ::get_mailer
      */
     public function test_message_id_reset_in_smtp_bulk_mode(): void {
         $this->resetAfterTest();
@@ -6136,5 +5725,92 @@ EOT;
                 'otherpurpose' => MOD_PURPOSE_COLLABORATION,
             ],
         ];
+    }
+
+    /**
+     * Test that plugin_supports throws coding exceptions for deprecated features.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('plugin_supports_deprecated_features_provider')]
+    public function test_plugin_supports_deprecated(
+        string $feature,
+    ): void {
+        $this->expectException(\core\exception\coding_exception::class);
+        plugin_supports('mod', 'example', $feature);
+    }
+
+    /**
+     * Data provider for testing deprecated features of the plugin_supports method.
+     */
+    public static function plugin_supports_deprecated_features_provider(): \Generator {
+        // FEATURE_GROUPMEMBERSONLY.
+        // Note: Use the string version.
+        yield 'FEATURE_GROUPMEMBERSONLY' => ['groupmembersonly'];
+    }
+
+    /**
+     * Data provider for test_should_vary_by_accept_language
+     *
+     * @return array
+     */
+    public static function should_vary_by_accept_language_provider(): array {
+        return [
+            'Single language installed' => [
+                'translations' => ['en' => 'English (en)'],
+                'script' => 'index.php',
+                'expected' => false,
+            ],
+            'Two languages installed' => [
+                'translations' => ['en' => 'English (en)', 'fr' => 'French (fr)'],
+                'script' => 'index.php',
+                'expected' => true,
+            ],
+            'Three languages installed' => [
+                'translations' => ['en' => 'English (en)', 'fr' => 'French (fr)', 'de' => 'German (de)'],
+                'script' => 'index.php',
+                'expected' => true,
+            ],
+            'Multi-lang but pluginfile.php' => [
+                'translations' => ['en' => 'English (en)', 'fr' => 'French (fr)'],
+                'script' => 'pluginfile.php',
+                'expected' => false,
+            ],
+            'Multi-lang but draftfile.php' => [
+                'translations' => ['en' => 'English (en)', 'fr' => 'French (fr)'],
+                'script' => 'draftfile.php',
+                'expected' => false,
+            ],
+            'Multi-lang but tokenpluginfile.php' => [
+                'translations' => ['en' => 'English (en)', 'fr' => 'French (fr)'],
+                'script' => 'tokenpluginfile.php',
+                'expected' => false,
+            ],
+            'Multi-lang but file.php' => [
+                'translations' => ['en' => 'English (en)', 'fr' => 'French (fr)'],
+                'script' => 'file.php',
+                'expected' => false,
+            ],
+        ];
+    }
+
+    /**
+     * Tests that should_vary_by_accept_language returns true only when more than one language pack is installed
+     * and the request is not for a binary file-serving endpoint.
+     *
+     * @param string[] $translations the installed translations to simulate
+     * @param string $script the script filename to simulate
+     * @param bool $expected whether Vary: Accept-Language should be sent
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('should_vary_by_accept_language_provider')]
+    public function test_should_vary_by_accept_language(array $translations, string $script, bool $expected): void {
+        $this->resetAfterTest();
+        testable_string_manager_for_current_language_tests::set_fake_list_of_installed_languages($translations);
+
+        $originalscript = $_SERVER['SCRIPT_NAME'] ?? null;
+        $_SERVER['SCRIPT_NAME'] = '/moodle/' . $script;
+
+        $this->assertEquals($expected, should_vary_by_accept_language());
+
+        $_SERVER['SCRIPT_NAME'] = $originalscript;
+        testable_string_manager_for_current_language_tests::reset_installed_languages_override();
     }
 }

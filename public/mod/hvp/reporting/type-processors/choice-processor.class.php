@@ -62,9 +62,9 @@ class ChoiceProcessor extends TypeProcessor {
    * @return string Description element as a string
    */
   private function generateDescription($description) {
-    return'<p class="h5p-reporting-description h5p-choices-task-description">'
-          . $description .
-          '</p>';
+    return'<div class="h5p-reporting-description h5p-choices-task-description">' .
+            $description .
+          '</div>';
   }
 
   /**
@@ -104,7 +104,7 @@ class ChoiceProcessor extends TypeProcessor {
 
       $row =
         '<td class="h5p-choices-alternative">' .
-            $choice->description->{'en-US'} .
+            htmlspecialchars($choice->description->{'en-US'}) .
         '</td>' .
         '<td class="h5p-choices-icon-cell">' .
           '<span class="' . $userClasses . '"></span>' .

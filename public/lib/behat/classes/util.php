@@ -103,7 +103,7 @@ class behat_util extends \core\test\testing_util {
         $user->lastname = 'User';
         $user->city = 'Perth';
         $user->country = 'AU';
-        user_update_user($user, false);
+        \core\user::update_user($user, false);
 
         // Disable email message processor.
         $DB->set_field('message_processors', 'enabled', '0', array('name' => 'email'));
@@ -168,6 +168,16 @@ class behat_util extends \core\test\testing_util {
                 file_put_contents("{$dirname}/{$direction}.css", $css);
             }
         }
+
+        // Build the editor content CSS.
+        $editorthemes = theme_build_editor_css_for_themes($themeconfigs, ['ltr'], true, $mtraceprogress);
+        foreach ($editorthemes as $themename => $themedata) {
+            $dirname = "{$storageroot}/{$themename}";
+            check_dir_exists($dirname);
+            foreach ($themedata as $direction => $css) {
+                file_put_contents("{$dirname}/editor-{$direction}.css", $css);
+            }
+        }
     }
 
     /**
@@ -216,7 +226,6 @@ class behat_util extends \core\test\testing_util {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         $result = curl_exec($ch);
         $statuscode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         if ($statuscode !== 200 || empty($result) || (!$result = json_decode($result, true))) {
 
@@ -471,6 +480,14 @@ class behat_util extends \core\test\testing_util {
                 if (file_exists($cssfile)) {
                     $themeconfig->set_css_content_cache(file_get_contents($cssfile));
                 }
+
+                $editorcssfile = "{$dirname}/editor-{$direction}.css";
+                if (file_exists($editorcssfile)) {
+                    // Match the cache key of the editor CSS served by theme/styles.php.
+                    $themeconfig->force_svg_use(true);
+                    $themeconfig->set_rtl_mode($direction === 'rtl');
+                    $themeconfig->set_editor_css_content_cache(file_get_contents($editorcssfile));
+                }
             }
         }
     }
@@ -520,12 +537,14 @@ class behat_util extends \core\test\testing_util {
         $accessibility = empty(behat_config_manager::get_behat_run_config_value('axe')) ? 'No' : 'Yes';
         $scssdeprecations = empty(behat_config_manager::get_behat_run_config_value('scss-deprecations')) ? 'No' : 'Yes';
         $icondeprecations = empty(behat_config_manager::get_behat_run_config_value('no-icon-deprecations')) ? 'Yes' : 'No';
+        $colourmode = behat_config_manager::get_behat_run_config_value('colourmode') ?: 'Theme default';
 
         $siteinfo .= <<<EOF
 Run optional tests:
 - Accessibility: {$accessibility}
 - SCSS deprecations: {$scssdeprecations}
 - Icon deprecations: {$icondeprecations}
+- Colour mode: {$colourmode}
 
 EOF;
 

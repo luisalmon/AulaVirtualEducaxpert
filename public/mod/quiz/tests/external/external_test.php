@@ -82,8 +82,14 @@ class testable_mod_quiz_external extends mod_quiz_external {
  * @copyright  2016 Juan Leyva <juan@moodle.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @since      Moodle 3.1
- * @covers \mod_quiz_external
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_quiz_external::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_quiz_external::class, 'get_user_attempts')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_quiz_external::class, 'get_user_quiz_attempts')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_quiz_external::class, 'get_user_best_grade')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_combined_review_options')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_combined_review_options_parameters')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_combined_review_options_returns')]
 final class external_test extends \core_external\tests\externallib_testcase {
     use \quiz_question_helper_test_trait;
 
@@ -240,7 +246,7 @@ final class external_test extends \core_external\tests\externallib_testcase {
         // Create what we expect to be returned when querying the two courses.
         // First for the student user.
         $allusersfields = ['id', 'coursemodule', 'course', 'name', 'intro', 'introformat', 'introfiles', 'lang',
-                                'timeopen', 'timeclose', 'grademethod', 'section', 'visible', 'groupmode', 'groupingid',
+                                'timeopen', 'timeclose', 'duedate', 'grademethod', 'section', 'visible', 'groupmode', 'groupingid',
                                 'attempts', 'timelimit', 'grademethod', 'decimalpoints', 'questiondecimalpoints', 'sumgrades',
                                 'grade', 'preferredbehaviour', 'hasfeedback', 'enableaitools', 'enabledaiactions'];
         $userswithaccessfields = ['attemptonlast', 'reviewattempt', 'reviewcorrectness', 'reviewmaxmarks', 'reviewmarks',
@@ -267,6 +273,7 @@ final class external_test extends \core_external\tests\externallib_testcase {
         $quiz1->lang = '';
         $quiz1->enableaitools = null;
         $quiz1->enabledaiactions = null;
+        $quiz1->duedate = 0;
 
         $quiz2->coursemodule = $quiz2->cmid;
         $quiz2->introformat = 1;
@@ -282,6 +289,7 @@ final class external_test extends \core_external\tests\externallib_testcase {
         $quiz2->lang = '';
         $quiz2->enableaitools = null;
         $quiz2->enabledaiactions = null;
+        $quiz2->duedate = 0;
 
         foreach (array_merge($allusersfields, $userswithaccessfields) as $field) {
             $expected1[$field] = $quiz1->{$field};
@@ -356,7 +364,7 @@ final class external_test extends \core_external\tests\externallib_testcase {
         $this->assertEquals($quiz2->course, $result['quizzes'][0]['course']);
 
         $this->assertFalse(isset($result['quizzes'][0]['timelimit']));
-
+        $this->assertFalse(isset($result['quizzes'][0]['duedate']));
     }
 
     /**
@@ -609,7 +617,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
      * Test get_user_attempts when the attempt is in 'submitted' state.
      *
      * @todo Remove in Moodle 6.0 as part of MDL-80956 final deprecations.
-     * @covers \mod_quiz_external::get_user_attempts
      */
     public function test_get_user_attempts_submitted(): void {
 
@@ -640,7 +647,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
      * Test get_user_attempts when the attempt is in 'notstarted' state. The attempt should not be returned.
      *
      * @todo Remove in Moodle 6.0 as part of MDL-80956 final deprecations.
-     * @covers \mod_quiz_external::get_user_attempts
      */
     public function test_get_user_attempts_notstarted(): void {
         // Create a quiz.
@@ -658,8 +664,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test get_quiz_user_attempts
-     *
-     * @covers \mod_quiz_external::get_user_quiz_attempts
      */
     public function test_get_user_quiz_attempts(): void {
 
@@ -740,8 +744,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
     /**
      * Test get_user_quiz_attempts respects review options
      * @todo MDL-88101: RunInSeparateProcess is needed because quiz_has_feedback has a static cache that isn't cleared.
-     *
-     * @covers \mod_quiz_external::get_user_quiz_attempts
      */
     #[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
     public function test_get_user_quiz_attempts_respects_review_options(): void {
@@ -917,8 +919,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test get_user_quiz_attempts with marks hidden
-     *
-     * @covers \mod_quiz_external::get_user_quiz_attempts
      */
     public function test_get_user_quiz_attempts_with_marks_hidden(): void {
         // Create quiz with one attempt finished and hide the mark.
@@ -955,8 +955,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test get_user_quiz_attempts when the attempt is in 'submitted' state.
-     *
-     * @covers \mod_quiz_external::get_user_quiz_attempts
      */
     public function test_get_user_quiz_attempts_submitted(): void {
 
@@ -984,8 +982,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test get_user_quiz_attempts when the attempt is in 'notstarted' state.
-     *
-     * @covers \mod_quiz_external::get_user_quiz_attempts
      */
     public function test_get_user_quiz_attempts_notstarted(): void {
         // Create a quiz.
@@ -1159,8 +1155,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test get_user_best_grade respects review options
-     *
-     * @covers \mod_quiz_external::get_user_best_grade
      */
     public function test_get_user_best_grade_respects_review_options(): void {
         global $DB;
@@ -1326,10 +1320,6 @@ final class external_test extends \core_external\tests\externallib_testcase {
 
     /**
      * Test get_combined_review_options when the user has an override.
-     *
-     * @covers ::get_combined_review_options
-     * @covers ::get_combined_review_options_parameters
-     * @covers ::get_combined_review_options_returns
      */
     public function test_get_combined_review_options_with_overrides(): void {
         global $DB;

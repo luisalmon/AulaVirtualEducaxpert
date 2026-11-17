@@ -30,8 +30,8 @@ use context_course;
 use context_system;
 use stdClass;
 use mod_customcert\element\element_interface;
-use mod_customcert\element\form_element_interface;
 use mod_customcert\element\legacy_element_adapter;
+use mod_customcert\element\form_element_interface;
 use mod_customcert\element\preparable_form_interface;
 use MoodleQuickForm;
 
@@ -55,6 +55,11 @@ final class form_service {
     public const string PROTECTION_COPY = 'copy';
 
     /**
+     * @var string the separator used to encode/decode customcert.protection as a single string
+     */
+    public const string PROTECTION_SEPARATOR = ', ';
+
+    /**
      * Build the form for an element.
      *
      * @param MoodleQuickForm $mform
@@ -75,8 +80,9 @@ final class form_service {
      * @param element_interface $element
      */
     public function prepare_after_data(MoodleQuickForm $mform, element_interface $element): void {
-        if ($element instanceof preparable_form_interface) {
-            $element->prepare_form($mform);
+        $target = ($element instanceof legacy_element_adapter) ? $element->get_inner() : $element;
+        if ($target instanceof preparable_form_interface) {
+            $target->prepare_form($mform);
         } else if ($element instanceof legacy_element_adapter) {
             // Legacy fallback: delegate to the wrapped legacy element's definition_after_data().
             $element->definition_after_data($mform);
@@ -91,7 +97,6 @@ final class form_service {
     public function normalise_submission(array &$data): void {
         global $COURSE, $SITE;
 
-        // Determine context for file operations.
         if (isset($COURSE) && isset($SITE) && $COURSE->id == $SITE->id) {
             $context = context_system::instance();
         } else if (isset($COURSE)) {
@@ -110,7 +115,7 @@ final class form_service {
             }
         }
 
-        // Map known select fields to canonical file metadata so save_unique_data() can simply encode.
+        // Map known select fields to canonical file metadata so normalise_data() can encode them.
         if (!empty($data['fileid'])) {
             $fs = get_file_storage();
             if ($file = $fs->get_file_by_id((int)$data['fileid'])) {
@@ -142,7 +147,7 @@ final class form_service {
             $protection[] = self::PROTECTION_COPY;
         }
 
-        return implode(', ', $protection);
+        return implode(self::PROTECTION_SEPARATOR, $protection);
     }
 
     /**

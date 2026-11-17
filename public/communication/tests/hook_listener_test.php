@@ -35,8 +35,8 @@ require_once(__DIR__ . '/communication_test_helper_trait.php');
  * @package    core_communication
  * @copyright  2023 Safat Shahin <safat.shahin@moodle.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \core_communication\hook_listener
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core_communication\hook_listener::class)]
 final class hook_listener_test extends \advanced_testcase {
 
     use communication_test_helper_trait;
@@ -577,7 +577,7 @@ final class hook_listener_test extends \advanced_testcase {
         $this->assertEquals($user->id, $courseusers);
 
         $user->suspended = 1;
-        user_update_user($user, false);
+        \core\user::update_user($user, false);
 
         $coursecommunication->reload();
         $courseusers = $coursecommunication->get_processor()->get_all_delete_flagged_userids();

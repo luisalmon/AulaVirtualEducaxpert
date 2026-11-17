@@ -25,6 +25,7 @@
 
 namespace core;
 
+use action_link;
 use moodle_page;
 
 defined('MOODLE_INTERNAL') || die();
@@ -40,8 +41,8 @@ require_once($CFG->libdir . '/blocklib.php');
  * @category  test
  * @copyright 2009 Tim Hunt
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @coversDefaultClass \moodle_page
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\moodle_page::class)]
 final class moodle_page_test extends \advanced_testcase {
 
     /**
@@ -357,14 +358,13 @@ final class moodle_page_test extends \advanced_testcase {
     /**
      * Test for set_title
      *
-     * @dataProvider set_title_provider
      * @param string|null $config The config value for $CFG->sitenameintitle.
      * @param bool $appendsitename The $appendsitename parameter
      * @param string $expected The expected site name to be appended to the title.
      * @param bool $sitenameset To simulate the absence of the site name being set in the site.
      * @return void
-     * @covers ::set_title
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('set_title_provider')]
     public function test_set_title(?string $config, bool $appendsitename, string $expected, bool $sitenameset = true): void {
         global $CFG, $SITE;
 
@@ -731,13 +731,15 @@ final class moodle_page_test extends \advanced_testcase {
 
     /**
      * Validate the theme value depending on the user theme and cohorts.
-     *
-     * @dataProvider get_user_theme_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('get_user_theme_provider')]
     public function test_cohort_get_user_theme($usertheme, $sitetheme, $cohortthemes, $expected): void {
-        global $DB, $PAGE, $USER;
+        global $CFG, $DB, $PAGE, $USER;
 
         $this->resetAfterTest();
+
+        // Use the fixture themes to test the precedence between different themes.
+        $CFG->themedir = $CFG->dirroot . '/lib/tests/fixtures/themes/';
 
         // Enable cohort themes.
         set_config('allowuserthemes', 1);
@@ -746,8 +748,10 @@ final class moodle_page_test extends \advanced_testcase {
         $systemctx = \context_system::instance();
 
         set_config('theme', $sitetheme);
-        // Create user.
-        $user = $this->getDataGenerator()->create_user(array('theme' => $usertheme));
+        // Create user. The theme is set directly as the fixture themes are not returned
+        // by get_list_of_themes(), which the user field validation checks against.
+        $user = $this->getDataGenerator()->create_user();
+        $DB->set_field('user', 'theme', $usertheme, ['id' => $user->id]);
 
         // Create cohorts and add user as member.
         $cohorts = array();
@@ -796,48 +800,47 @@ final class moodle_page_test extends \advanced_testcase {
                 'usertheme' => '',
                 'sitetheme' => 'boost',
                 'cohortthemes' => [
-                    'classic',
+                    'parent',
                 ],
-                'expected' => 'classic',
+                'expected' => 'parent',
             ],
             'User member of one cohort which has a theme set, and one without a theme' => [
                 'usertheme' => '',
                 'sitetheme' => 'boost',
                 'cohortthemes' => [
-                    'classic',
+                    'parent',
                     '',
                 ],
-                'expected' => 'classic',
+                'expected' => 'parent',
             ],
             'User member of one cohort which has a theme set, and one with a different theme' => [
                 'usertheme' => '',
                 'sitetheme' => 'boost',
                 'cohortthemes' => [
-                    'classic',
-                    'someother',
+                    'parent',
+                    'child',
                 ],
                 'expected' => 'boost',
             ],
             'User with a theme but not a member of any cohort' => [
-                'usertheme' => 'classic',
+                'usertheme' => 'parent',
                 'sitetheme' => 'boost',
                 'cohortthemes' => [],
-                'expected' => 'classic',
+                'expected' => 'parent',
             ],
             'User with a theme and member of one cohort which has a theme set' => [
-                'usertheme' => 'classic',
+                'usertheme' => 'parent',
                 'sitetheme' => 'boost',
                 'cohortthemes' => [
-                    'boost',
+                    'child',
                 ],
-                'expected' => 'classic',
+                'expected' => 'parent',
             ],
         ];
     }
 
     /**
      * Tests user_can_edit_blocks() returns the expected response.
-     * @covers ::user_can_edit_blocks()
      */
     public function test_user_can_edit_blocks(): void {
         global $DB;
@@ -862,7 +865,6 @@ final class moodle_page_test extends \advanced_testcase {
 
     /**
      * Tests that calling force_lock_all_blocks() will cause user_can_edit_blocks() to return false, regardless of capabilities.
-     * @covers ::force_lock_all_blocks()
      */
     public function test_force_lock_all_blocks(): void {
         $this->testpage->set_context(\context_system::instance());
@@ -879,8 +881,6 @@ final class moodle_page_test extends \advanced_testcase {
     /**
      * Test the method to set and retrieve the show_course_index property.
      *
-     * @covers ::set_show_course_index
-     * @covers ::get_show_course_index
      * @return void
      */
     public function test_show_course_index(): void {
@@ -928,6 +928,37 @@ final class moodle_page_test extends \advanced_testcase {
             $page->get_ai_visibility_hint(),
             'AI visibility hint should be true after being re-enabled.'
         );
+    }
+
+    /**
+     * Test that supplementary content resets after calling reset_theme_and_output.
+     */
+    public function test_reset_theme_and_output_resets_supplementarycontent(): void {
+        $page = new moodle_page();
+        $page->set_supplementary_content(new action_link(new \moodle_url('/'), 'link'));
+        $this->assertNotNull($page->get_supplementary_content());
+        $page->reset_theme_and_output();
+        $this->assertNull($page->get_supplementary_content());
+    }
+
+    /**
+     * Test that sticky footer setting resets after calling reset_theme_and_output.
+     */
+    public function test_reset_theme_and_output_resets_sticky_footer_flag(): void {
+        $page = new moodle_page();
+        $page->set_has_sticky_footer(true);
+        $page->reset_theme_and_output();
+        $this->assertFalse($page->has_sticky_footer());
+    }
+
+    /**
+     * Test that navigation footer setting resets after calling reset_theme_and_output.
+     */
+    public function test_reset_theme_and_output_resets_navigation_footer_flag(): void {
+        $page = new moodle_page();
+        $page->set_show_navigation_footer(false);
+        $page->reset_theme_and_output();
+        $this->assertTrue($page->should_show_navigation_footer());
     }
 }
 

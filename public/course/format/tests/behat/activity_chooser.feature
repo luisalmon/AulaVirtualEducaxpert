@@ -17,6 +17,12 @@ Feature: Display and choose from the available activities in course
     And I log in as "teacher"
     And I am on "Course" course homepage with editing mode on
 
+  Scenario: Selecting a tab inside the activity chooser does not change the page's URL anchor
+    Given I open the activity chooser
+    And the url should match "/course/view\.php\?id=\d+$"
+    When I click on "Resources" "link" in the "Add an activity or resource" "dialogue"
+    Then the url should match "/course/view\.php\?id=\d+$"
+
   Scenario: The teacher can choose to add an activity from the activity items in the activity chooser
     # Validate the activity chooser is opened in this first scenario.
     Given I open the activity chooser
@@ -282,6 +288,7 @@ Feature: Display and choose from the available activities in course
     And I press the tab key
     And I press the tab key
     # Confirm right key works
+    And I press the right key
     And I press the right key
     And I press the right key
     And the focused element is "Choice" "menuitem" in the "Add an activity or resource" "dialogue"

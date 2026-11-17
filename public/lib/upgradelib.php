@@ -445,6 +445,9 @@ function upgrade_plugin_savepoint($result, $version, $type, $plugin, $allowabort
 /**
  * Detect if there are leftovers in PHP source files.
  *
+ * Paths are relative to $CFG->dirroot (from 5.1 onwards, that means
+ * inside the "public/" directory)
+ *
  * During main version upgrades administrators MUST move away
  * old PHP source files and start from scratch (or better
  * use git).
@@ -455,6 +458,11 @@ function upgrade_stale_php_files_present(): bool {
     global $CFG;
 
     $someexamplesofremovedfiles = [
+        // Removed in 5.3.
+        '/course/tests/behat/activity_navigation_with_restrictions.feature',
+        '/lib/amd/src/deprecated.js',
+        '/lib/amd/src/url.js',
+        '/lib/js/esm/build/react_autoinit.js.map',
         // Removed in 5.2.
         '/availability/renderer.php',
         '/course/tests/behat/course_controls.feature',
@@ -872,6 +880,22 @@ function upgrade_plugins_modules($startcallback, $endcallback, $verbose) {
         $module->name = $mod;   // The name MUST match the directory
 
         $installedversion = $DB->get_field('config_plugins', 'value', array('name'=>'version', 'plugin'=>$component)); // No caching!
+
+        // Check if the plugin has a lib.php file and check for deprecated plugin supports.
+        $libfile = "{$fullmod}/lib.php";
+        if (file_exists($libfile)) {
+            require_once($libfile);
+            $supportsfunction = "{$mod}_supports";
+            if (function_exists($supportsfunction)) {
+                if ($supportsfunction('groupmembersonly') === true) {
+                    throw new plugin_defective_exception(
+                        $component,
+                        "The FEATURE_GROUPMEMBERSONLY feature has been deprecated and is no longer supported. "
+                        . "It should no longer be declared in the plugin.",
+                    );
+                }
+            }
+        }
 
         if (file_exists($fullmod.'/db/install.php')) {
             if (get_config($module->name, 'installrunning')) {

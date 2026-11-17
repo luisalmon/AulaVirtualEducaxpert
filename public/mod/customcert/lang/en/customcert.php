@@ -18,7 +18,7 @@
  * Language strings for the customcert module.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -35,6 +35,7 @@ $string['cannotverifyallcertificates'] = 'You do not have the permission to veri
 $string['certificate'] = 'Certificate';
 $string['certificateexecutionperiod'] = 'Certificate execution period';
 $string['certificateexecutionperiod_desc'] = 'If not 0, the task will not process certificates whose course has been inactive or the last issue is older than the configured time. This may help to improve the performance of the scheduled task.';
+$string['certificatepage'] = 'Certificate page';
 $string['certificatesperrun'] = 'Certificates per run';
 $string['certificatesperrun_desc'] = 'Enter the number of certificates to process per scheduled task run where 0 means it will process all certificates.';
 $string['code'] = 'Code';
@@ -52,6 +53,7 @@ the certificate.';
 $string['createtemplate'] = 'Create template';
 $string['customcert:addinstance'] = 'Add a new custom certificate instance';
 $string['customcert:manage'] = 'Manage a custom certificate';
+$string['customcert:manageautomaticissuance'] = 'Manage automatic certificate issuance';
 $string['customcert:manageemailothers'] = 'Manage email others setting';
 $string['customcert:manageemailstudents'] = 'Manage email students setting';
 $string['customcert:manageemailteachers'] = 'Manage email teachers setting';
@@ -82,13 +84,21 @@ $string['deliveryoptions'] = 'Delivery options';
 $string['description'] = 'Description';
 $string['downloadallissuedcertificates'] = 'Download all issued certificates';
 $string['downloadallsitecertificates'] = 'Download all site certificates';
-$string['downloadallsitecertificatesdesc'] = 'This will download all the certificates on the site in a zip file.';
+$string['downloadallsitecertificatesconfirm'] = 'Are you sure you want to queue a download of all certificates on the site? You will receive a notification with a link to download the zip file once it is ready.';
+$string['downloadallsitecertificatesdesc'] = 'This will generate a zip file containing all the certificates on the site in the background. You will receive a notification with a link to download it once it is ready. Archives older than 24 hours are removed by the cleanup task.';
+$string['downloadallsitecertificatesnonefoundbody'] = 'There are currently no certificates on the site to include in the zip file you requested.';
+$string['downloadallsitecertificatesnonefoundsubject'] = 'No site certificates found to download';
+$string['downloadallsitecertificatesqueued'] = 'Your request to download all site certificates has been queued. You will receive a notification with a link to download the zip file once it is ready.';
+$string['downloadallsitecertificatesreadybody'] = 'Your zip file of all site certificates is ready. You can download it here: {$a}';
+$string['downloadallsitecertificatesreadysubject'] = 'Your site certificates download is ready';
+$string['draggableelement'] = 'draggable element';
 $string['duplicate'] = 'Duplicate';
 $string['duplicateconfirm'] = 'Duplicate confirmation';
 $string['duplicatetemplateconfirm'] = 'Are you sure you want to duplicate this certificate template?';
 $string['editcustomcert'] = 'Edit certificate';
 $string['editelement'] = 'Edit element';
 $string['edittemplate'] = 'Edit template';
+$string['elementdefaultname'] = 'Element {$a}';
 $string['elementheight'] = 'Height';
 $string['elementheight_help'] = 'Specify the height of the element. If \'0\' is allowed it is automatically calculated.';
 $string['elementname'] = 'Element name';
@@ -118,6 +128,8 @@ $string['emailstudents_help'] = 'If set this will email the students a copy of t
 $string['emailstudentsubject'] = '{$a->coursefullname}: {$a->certificatename}';
 $string['emailteachers'] = 'Email teachers';
 $string['emailteachers_help'] = 'If set this will email the teachers a copy of the certificate when it becomes available. <strong>Warning:</strong> Setting this to \'Yes\' before you have finished creating the certificate will email the teacher an incomplete certificate.';
+$string['errorcreatetempdir'] = 'Could not create a temporary directory for the certificate download.';
+$string['errorcreatezip'] = 'Could not create the certificate download zip archive.';
 $string['eventelementcreated'] = 'Custom certificate element created';
 $string['eventelementdeleted'] = 'Custom certificate element deleted';
 $string['eventelementupdated'] = 'Custom certificate element updated';
@@ -156,6 +168,8 @@ $string['invalidheight'] = 'The height has to be a valid number greater than 0.'
 $string['invalidmargin'] = 'The margin has to be a valid number greater than 0.';
 $string['invalidposition'] = 'Please select a positive number for position {$a}.';
 $string['invalidwidth'] = 'The width has to be a valid number greater than 0.';
+$string['issueautomatically'] = 'Issue certificates automatically';
+$string['issueautomatically_help'] = 'When enabled, certificates can be automatically issued to eligible users so they can be sent to "Email teachers" or "Email others" recipients even when "Email students" is disabled. When disabled, certificates are only sent to those recipients after the user has obtained their certificate.';
 $string['landscape'] = 'Landscape';
 $string['leftmargin'] = 'Left margin';
 $string['leftmargin_help'] = 'This is the left margin of the certificate PDF in mm.';
@@ -165,6 +179,7 @@ $string['loadtemplate'] = 'Load template';
 $string['loadtemplatemsg'] = 'Are you sure you wish to load this template? This will remove any existing pages and elements for this certificate.';
 $string['managetemplates'] = 'Manage templates';
 $string['managetemplatesdesc'] = 'This link will take you to a new screen where you will be able to manage templates used by Custom certificate activities in courses.';
+$string['messageprovider:sitecertificatesdownloadready'] = 'Notification that a site certificates download is ready';
 $string['modify'] = 'Modify';
 $string['modulename'] = 'Custom certificate';
 $string['modulename_help'] = 'This module allows for the dynamic generation of PDF certificates.';
@@ -207,7 +222,7 @@ $string['privacy:metadata:customcert_issues:studentemailed'] = 'Whether or not t
 $string['privacy:metadata:customcert_issues:timecreated'] = 'The time the certificate was issued';
 $string['privacy:metadata:customcert_issues:userid'] = 'The ID of the user who was issued the certificate';
 $string['rearrangeelements'] = 'Reposition elements';
-$string['rearrangeelementsheading'] = 'Drag and drop elements to change where they are positioned on the certificate.';
+$string['rearrangeelementsheading'] = 'Drag elements to reposition them, or click an element to edit it.';
 $string['receiveddate'] = 'Awarded on';
 $string['refpoint'] = 'Reference point location';
 $string['refpoint_help'] = 'The reference point is the location of an element from which its x and y coordinates are determined. It is indicated by the \'+\' that appears in the centre or corners of the element.';
@@ -236,7 +251,9 @@ This isn\'t required if you plan on solely using the drag and drop interface for
 $string['studentemailedunknown'] = 'Unknown (predates this feature)';
 $string['subplugintype_customcertelement'] = 'Element';
 $string['subplugintype_customcertelement_plural'] = 'Elements';
+$string['taskcleanupsitecertificatesdownloads'] = 'Clean up old site certificates download archives';
 $string['taskemailcertificate'] = 'Handles emailing certificates.';
+$string['taskgeneratesitecertificatesdownload'] = 'Generate site certificates download archive';
 $string['taskissuecertificate'] = 'Issue certificates task';
 $string['templatename'] = 'Template name';
 $string['templatenameexists'] = 'That template name is currently in use, please choose another.';

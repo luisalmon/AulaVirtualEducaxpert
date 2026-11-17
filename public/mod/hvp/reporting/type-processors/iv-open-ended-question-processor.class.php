@@ -5,6 +5,8 @@
  * Processes and generates HTML report for 'fill-in' interaction type.
  */
 class IVOpenEndedQuestionProcessor extends TypeProcessor {
+  /** @var int $counter */
+  private $counter;
 
   function __construct() {
     $this->counter = 0;

@@ -18,7 +18,7 @@
  * Serves files for the mobile app.
  *
  * @package   mod_customcert
- * @copyright 2018 Mark Nelson <markn@moodle.com>
+ * @copyright 2018 Mark Nelson <mdjnelson@gmail.com>
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -26,8 +26,8 @@
  * AJAX_SCRIPT - exception will be converted into JSON.
  */
 
+use mod_customcert\mobile_access;
 use mod_customcert\service\certificate_issue_service;
-use mod_customcert\service\certificate_time_service;
 use mod_customcert\service\pdf_generation_service;
 use mod_customcert\service\template_repository;
 use mod_customcert\template;
@@ -57,7 +57,6 @@ $userid = required_param('userid', PARAM_INT);
 $webservicelib = new webservice();
 $authenticationinfo = $webservicelib->authenticate_user($token);
 
-// Check the service allows file download.
 $enabledfiledownload = (int) ($authenticationinfo['service']->downloadfiles);
 if (empty($enabledfiledownload)) {
     throw new webservice_access_exception('Web service file downloading must be enabled in external service settings');
@@ -67,21 +66,11 @@ $cm = get_coursemodule_from_instance('customcert', $certificateid, 0, false, MUS
 $course = $DB->get_record('course', ['id' => $cm->course], '*', MUST_EXIST);
 $certificate = $DB->get_record('customcert', ['id' => $certificateid], '*', MUST_EXIST);
 
-// Capabilities check.
-require_capability('mod/customcert:view', \context_module::instance($cm->id));
-if ($userid != $USER->id) {
-    require_capability('mod/customcert:viewreport', \context_module::instance($cm->id));
-} else {
-    // Make sure the user has met the required time.
-    if ($certificate->requiredtime) {
-        $timeservice = certificate_time_service::create();
-        if ($timeservice->get_course_time((int)$certificate->course, (int)$USER->id) < ($certificate->requiredtime * 60)) {
-            exit();
-        }
-    }
-}
-
 $issue = $DB->get_record('customcert_issues', ['customcertid' => $certificateid, 'userid' => $userid]);
+
+if (!mobile_access::require_access($cm, $certificate, (int)$userid, (bool)$issue)) {
+    exit();
+}
 
 // If we are doing it for the logged in user then we want to issue the certificate.
 if (!$issue) {
@@ -93,12 +82,10 @@ if (!$issue) {
     $issueservice = certificate_issue_service::create();
     $issueservice->issue_certificate((int)$certificate->id, (int)$USER->id);
 
-    // Set the custom certificate as viewed.
     $completion = new completion_info($course);
     $completion->set_module_viewed($cm);
 }
 
-// Now we want to generate the PDF.
 $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$certificate->templateid));
 $pdfservice = pdf_generation_service::create();
 $pdfservice->generate_pdf($template, false, (int)$userid);

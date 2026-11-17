@@ -29,10 +29,10 @@ use core_user\reportbuilder\datasource\users;
  * Unit tests for user profile fields helper
  *
  * @package     core_reportbuilder
- * @covers      \core_reportbuilder\local\helpers\user_profile_fields
  * @copyright   2021 David Matamoros <davidmc@moodle.com>
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core_reportbuilder\local\helpers\user_profile_fields::class)]
 final class user_profile_fields_test extends core_reportbuilder_testcase {
 
     /**
@@ -166,7 +166,7 @@ final class user_profile_fields_test extends core_reportbuilder_testcase {
     }
 
     /**
-     * Test that joins added to the profile fields helper are present in its columns/filters
+     * Test that element-specific joins are present in columns/filters
      */
     public function test_add_join(): void {
         $this->resetAfterTest();
@@ -181,19 +181,6 @@ final class user_profile_fields_test extends core_reportbuilder_testcase {
         $filterjoins = $userprofilefields->get_filters()[0]->get_joins();
         $this->assertCount(1, $filterjoins);
         $this->assertStringStartsWith('LEFT JOIN {user_info_data}', $filterjoins[0]);
-
-        // Add additional join.
-        $userprofilefields->add_join('JOIN {test} t ON t.id = id');
-
-        $columnjoins = $userprofilefields->get_columns()[0]->get_joins();
-        $this->assertCount(2, $columnjoins);
-        $this->assertEquals('JOIN {test} t ON t.id = id', $columnjoins[0]);
-        $this->assertStringStartsWith('LEFT JOIN {user_info_data}', $columnjoins[1]);
-
-        $filterjoins = $userprofilefields->get_filters()[0]->get_joins();
-        $this->assertCount(2, $filterjoins);
-        $this->assertEquals('JOIN {test} t ON t.id = id', $filterjoins[0]);
-        $this->assertStringStartsWith('LEFT JOIN {user_info_data}', $filterjoins[1]);
     }
 
     /**
@@ -407,9 +394,8 @@ final class user_profile_fields_test extends core_reportbuilder_testcase {
      * @param string $filtername
      * @param array $filtervalues
      * @param string|null $expectmatch
-     *
-     * @dataProvider custom_report_filter_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('custom_report_filter_provider')]
     public function test_custom_report_filter(string $filtername, array $filtervalues, ?string $expectmatch = null): void {
         $this->resetAfterTest();
         $this->setAdminUser();

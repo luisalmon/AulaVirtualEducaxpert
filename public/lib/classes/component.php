@@ -203,6 +203,9 @@ class component {
      * Register the Moodle class autoloader.
      */
     public static function register_autoloader(): void {
+        if (is_file(dirname(__DIR__, 3) . '/vendor/autoload.php')) {
+            require_once(dirname(__DIR__, 3) . '/vendor/autoload.php');
+        }
         if (defined('COMPONENT_CLASSLOADER')) {
             spl_autoload_register(COMPONENT_CLASSLOADER);
         } else {
@@ -574,7 +577,7 @@ class component {
         // Always keep moodle_exception in place.
         $keyclasses = [
             \core\exception\moodle_exception::class,
-            \core\telemetry::class,
+            \core\router\scope\util::class,
         ];
         foreach ($keyclasses as $classname) {
             if (!array_key_exists($classname, $cache['classmap'])) {
@@ -1453,7 +1456,6 @@ $cache = ' . var_export($cache, true) . ';
      * and $namespace is empty.
      */
     public static function get_component_classes_in_namespace($component = null, $namespace = '') {
-
         $classes = [];
         self::init();
 
@@ -1482,6 +1484,27 @@ $cache = ' . var_export($cache, true) . ';
         }
 
         return $classes;
+    }
+
+    /**
+     * Returns all classes across all components matching the provided namespace.
+     *
+     * @param string $namespace Namespace from the component name.
+     * @return string[] The full class names matching the namespace.
+     */
+    public static function get_classes_matching_namespace(string $namespace): array {
+        $classes = [];
+        foreach (self::get_component_names(true) as $component) {
+            $classes = array_merge(
+                $classes,
+                self::get_component_classes_in_namespace(
+                    component: $component,
+                    namespace: $namespace,
+                ),
+            );
+        }
+
+        return array_keys($classes);
     }
 
     /**

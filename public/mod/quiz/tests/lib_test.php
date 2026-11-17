@@ -27,6 +27,7 @@ namespace mod_quiz;
 use context_module;
 use core_external\external_api;
 use mod_quiz\quiz_settings;
+use PHPUnit\Framework\Attributes\CoversFunction;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -38,8 +39,81 @@ require_once($CFG->dirroot . '/mod/quiz/tests/quiz_question_helper_test_trait.ph
  * @copyright  2008 The Open University
  * @license    http://www.gnu.org/copyleft/gpl.html GNU Public License
  */
+#[CoversFunction('quiz_add_instance')]
+#[CoversFunction('quiz_update_instance')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('quiz_delete_instance')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('mod_quiz_core_calendar_provide_event_action')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('mod_quiz_inplace_editable')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('quiz_num_attempt_summary')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('quiz_num_attempts')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('quiz_num_users_who_attempted')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('quiz_num_users_who_can_attempt')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('mod_quiz_output_fragment_question_data')]
 final class lib_test extends \advanced_testcase {
     use \quiz_question_helper_test_trait;
+
+    /**
+     * Test that creating a quiz without a due date uses the database default without triggering warnings.
+     */
+    public function test_quiz_add_instance_without_duedate(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+
+        $quiz = (object) [
+            'course' => $course->id,
+            'name' => 'Quiz without a due date',
+            'intro' => '',
+            'introformat' => FORMAT_HTML,
+            'timeopen' => 0,
+            'timeclose' => 0,
+            'quizpassword' => '',
+            'grade' => 100,
+            'decimalpoints' => 2,
+            'questiondecimalpoints' => -1,
+        ];
+        $quiz->coursemodule = add_course_module((object) [
+            'course' => $course->id,
+            'module' => $DB->get_field('modules', 'id', ['name' => 'quiz'], MUST_EXIST),
+        ]);
+
+        $quizid = quiz_add_instance($quiz);
+
+        $this->assertEquals(0, $DB->get_field('quiz', 'duedate', ['id' => $quizid], MUST_EXIST));
+        $this->assertFalse($DB->record_exists('event', [
+            'modulename' => 'quiz',
+            'instance' => $quizid,
+            'eventtype' => QUIZ_EVENT_TYPE_DUE,
+        ]));
+    }
+
+    /**
+     * Test that updating a quiz without a due date preserves the stored date and its calendar event.
+     */
+    public function test_quiz_update_instance_without_duedate(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $duedate = time() + DAYSECS;
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id, 'duedate' => $duedate]);
+        $quiz->instance = $quiz->id;
+        $quiz->coursemodule = $quiz->cmid;
+        $quiz->quizpassword = $quiz->password;
+        unset($quiz->duedate);
+
+        $this->assertTrue(quiz_update_instance($quiz, null));
+
+        $this->assertEquals($duedate, $DB->get_field('quiz', 'duedate', ['id' => $quiz->id], MUST_EXIST));
+        $this->assertEquals($duedate, $DB->get_field('event', 'timestart', [
+            'modulename' => 'quiz',
+            'instance' => $quiz->id,
+            'eventtype' => QUIZ_EVENT_TYPE_DUE,
+        ], MUST_EXIST));
+    }
 
     public function test_quiz_has_grades(): void {
         $quiz = new \stdClass();
@@ -137,8 +211,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test deleting a quiz when the course is deleted.
-     *
-     * @covers ::quiz_delete_instance
      */
     public function test_quiz_when_delete_course(): void {
         global $DB, $USER;
@@ -422,6 +494,7 @@ final class lib_test extends \advanced_testcase {
             'quiz' => $quiz->id,
             'groupid' => $group1->id,
             'timeopen' => $now,
+            'duedate' => $now + 10,
             'timeclose' => $now + 20
         ];
         $DB->insert_record('quiz_overrides', $override1);
@@ -430,6 +503,7 @@ final class lib_test extends \advanced_testcase {
             'quiz' => $quiz->id,
             'groupid' => $group2->id,
             'timeopen' => $now - 10,
+            'duedate' => $now,
             'timeclose' => $now + 10
         ];
         $DB->insert_record('quiz_overrides', $override2);
@@ -446,6 +520,45 @@ final class lib_test extends \advanced_testcase {
         // Override 1's time close has higher priority since it is later than override 2's.
         $this->assertEquals(1, $closepriorities[$override1->timeclose]);
         $this->assertEquals(2, $closepriorities[$override2->timeclose]);
+
+        $duedatepriorities = $priorities['duedate'];
+        // Override 1's due date has higher priority since it is later than override 2's.
+        $this->assertEquals(1, $duedatepriorities[$override1->duedate]);
+        $this->assertEquals(2, $duedatepriorities[$override2->duedate]);
+    }
+
+    /**
+     * Test event actions for due event.
+     */
+    public function test_quiz_core_calendar_provide_event_action_due(): void {
+        $this->resetAfterTest();
+
+        $this->setAdminUser();
+
+        // Create a course.
+        $course = $this->getDataGenerator()->create_course();
+        // Create a student and enrol into the course.
+        $student = $this->getDataGenerator()->create_and_enrol($course);
+        // Create a quiz.
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id,
+            'timeopen' => time() - DAYSECS, 'duedate' => time() + HOURSECS, 'timeclose' => time() + DAYSECS]);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $quiz->id, QUIZ_EVENT_TYPE_DUE);
+        // Now, log in as student.
+        $this->setUser($student);
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event.
+        $actionevent = mod_quiz_core_calendar_provide_event_action($event, $factory);
+
+        // Confirm the event was decorated.
+        $this->assertInstanceOf('\core_calendar\local\event\value_objects\action', $actionevent);
+        $this->assertEquals(get_string('attemptquiznow', 'quiz'), $actionevent->get_name());
+        $this->assertInstanceOf('moodle_url', $actionevent->get_url());
+        $this->assertEquals(1, $actionevent->get_item_count());
+        $this->assertTrue($actionevent->is_actionable());
     }
 
     public function test_quiz_core_calendar_provide_event_action_open(): void {
@@ -970,11 +1083,10 @@ final class lib_test extends \advanced_testcase {
     /**
      * Test customised and automated question numbering for a given slot number and customised value.
      *
-     * @dataProvider mod_quiz_inplace_editable_provider
      * @param int $slotnumber
      * @param string $newvalue
-     * @covers ::mod_quiz_inplace_editable
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('mod_quiz_inplace_editable_provider')]
     public function test_mod_quiz_inplace_editable(int $slotnumber, string $newvalue): void {
         global $CFG;
         require_once($CFG->dirroot . '/lib/external/externallib.php');
@@ -1031,9 +1143,8 @@ final class lib_test extends \advanced_testcase {
      *
      * @param int $groupmode The group mode to use for the test.
      * @param array $expected The expected results for each user.
-     * @covers ::quiz_num_attempt_summary
-     * @dataProvider num_attempts_data_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('num_attempts_data_provider')]
     public function test_quiz_num_attempt_summary(int $groupmode, array $expected): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -1152,9 +1263,8 @@ final class lib_test extends \advanced_testcase {
      *
      * @param int $groupmode The group mode to use for the test.
      * @param array $expected The expected results for each group setting.
-     * @covers ::quiz_num_attempts
-     * @dataProvider quiz_num_attempts_data_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('quiz_num_attempts_data_provider')]
     public function test_quiz_num_attempts(int $groupmode, array $expected): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -1214,8 +1324,6 @@ final class lib_test extends \advanced_testcase {
 
     /**
      * Test the quiz_num_attempts function with the student only flag.
-     *
-     * @covers ::quiz_num_attempts
      */
     public function test_quiz_num_attempts_student_only(): void {
         $this->resetAfterTest();
@@ -1237,9 +1345,8 @@ final class lib_test extends \advanced_testcase {
      *
      * @param int $groupmode The group mode to use for the test.
      * @param array $expected The expected results for each user.
-     * @covers ::quiz_num_users_who_attempted
-     * @dataProvider quiz_num_users_who_attempted_data_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('quiz_num_users_who_attempted_data_provider')]
     public function test_quiz_num_users_who_attempted(int $groupmode, array $expected): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -1304,9 +1411,8 @@ final class lib_test extends \advanced_testcase {
      *
      * @param int $groupmode The group mode to use for the test.
      * @param array $expected The expected results for each user.
-     * @covers ::quiz_num_users_who_can_attempt
-     * @dataProvider quiz_num_users_who_can_attempt_data_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('quiz_num_users_who_can_attempt_data_provider')]
     public function test_quiz_num_users_who_can_attempt(int $groupmode, array $expected): void {
         $this->resetAfterTest();
         $this->setAdminUser();
@@ -1436,5 +1542,218 @@ final class lib_test extends \advanced_testcase {
             'cm' => $cm,
             'attempts' => $attempts,
         ];
+    }
+
+    /**
+     * Build the args array for the question_data fragment callback.
+     *
+     * @param \stdClass $quiz quiz instance (with cmid).
+     * @param \stdClass $course course the request is scoped to.
+     * @param int $categoryid question category to filter on.
+     * @param string $view view class name.
+     * @param int|null $bankcmid cmid of the question bank being browsed, defaults to the quiz.
+     * @return array
+     */
+    private function question_data_fragment_args(
+        \stdClass $quiz,
+        \stdClass $course,
+        int $categoryid,
+        string $view = \mod_quiz\question\bank\custom_view::class,
+        ?int $bankcmid = null,
+    ): array {
+        return [
+            'cmid' => $bankcmid ?? $quiz->cmid,
+            'quizcmid' => $quiz->cmid,
+            'courseid' => $course->id,
+            'view' => $view,
+            'filter' => json_encode(['category' => ['jointype' => 1, 'values' => [$categoryid]]]),
+            'jointype' => '1',
+            'qpage' => '0',
+            'qperpage' => '100',
+            'extraparams' => '{}',
+            'sortdata' => '{}',
+        ];
+    }
+
+    /**
+     * Loading the question bank fragment requires mod/quiz:manage.
+     */
+    public function test_question_data_fragment_requires_manage_capability(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $questiongenerator = $generator->get_plugin_generator('core_question');
+
+        $course = $generator->create_course();
+        $quiz = $this->create_test_quiz($course);
+        $student = $generator->create_and_enrol($course, 'student');
+        $cat = $questiongenerator->create_question_category(['contextid' => \context_course::instance($course->id)->id]);
+
+        $this->setUser($student);
+        $this->expectException(\required_capability_exception::class);
+        mod_quiz_output_fragment_question_data($this->question_data_fragment_args($quiz, $course, $cat->id));
+    }
+
+    /**
+     * The question_data fragment only serves categories the user may view in the bank, so a
+     * teacher's own-course access does not extend to another course's categories.
+     */
+    public function test_question_data_fragment_scoped_to_usable_categories(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $questiongenerator = $generator->get_plugin_generator('core_question');
+
+        $c1 = $generator->create_course();
+        $c2 = $generator->create_course();
+        $quiz = $this->create_test_quiz($c1);
+        $teacher = $generator->create_and_enrol($c1, 'editingteacher');
+        $othercat = $questiongenerator->create_question_category(['contextid' => \context_course::instance($c2->id)->id]);
+        $questiongenerator->create_question(
+            'shortanswer',
+            null,
+            ['category' => $othercat->id, 'name' => 'Other course question'],
+        );
+
+        $this->setUser($teacher);
+        $this->expectException(\required_capability_exception::class);
+        mod_quiz_output_fragment_question_data($this->question_data_fragment_args($quiz, $c1, $othercat->id));
+    }
+
+    /**
+     * A teacher loads questions from a category in their own course.
+     */
+    public function test_question_data_fragment_allows_own_category(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $questiongenerator = $generator->get_plugin_generator('core_question');
+
+        $course = $generator->create_course();
+        $quiz = $this->create_test_quiz($course);
+        $teacher = $generator->create_and_enrol($course, 'editingteacher');
+        $cat = $questiongenerator->create_question_category(
+            ['contextid' => \context_module::instance($quiz->cmid)->id],
+        );
+        $questiongenerator->create_question(
+            'shortanswer',
+            null,
+            ['category' => $cat->id, 'name' => 'Own course question'],
+        );
+
+        $this->setUser($teacher);
+        $html = mod_quiz_output_fragment_question_data($this->question_data_fragment_args($quiz, $course, $cat->id));
+        $this->assertStringContainsString('Own course question', $html);
+    }
+
+    /**
+     * A teacher editing a quiz browses a shared bank in another course where they only hold
+     * question bank capabilities, not mod/quiz:manage.
+     */
+    public function test_question_data_fragment_allows_shared_bank_without_manage(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $questiongenerator = $generator->get_plugin_generator('core_question');
+
+        $c1 = $generator->create_course();
+        $c2 = $generator->create_course();
+        $quiz = $this->create_test_quiz($c1);
+        $teacher = $generator->create_and_enrol($c1, 'editingteacher');
+
+        $qbank = $generator->create_module('qbank', ['course' => $c2->id]);
+        $qbankcontext = \context_module::instance($qbank->cmid);
+        $roleid = $generator->create_role();
+        assign_capability('moodle/question:viewall', CAP_ALLOW, $roleid, \context_system::instance()->id);
+        role_assign($roleid, $teacher->id, $qbankcontext->id);
+        $this->assertFalse(has_capability('mod/quiz:manage', $qbankcontext, $teacher));
+
+        $cat = $questiongenerator->create_question_category(['contextid' => $qbankcontext->id]);
+        $questiongenerator->create_question(
+            'shortanswer',
+            null,
+            ['category' => $cat->id, 'name' => 'Shared bank question'],
+        );
+
+        $this->setUser($teacher);
+        $html = mod_quiz_output_fragment_question_data(
+            $this->question_data_fragment_args($quiz, $c1, $cat->id, bankcmid: $qbank->cmid),
+        );
+        $this->assertStringContainsString('Shared bank question', $html);
+    }
+
+    /**
+     * The question_data fragment rejects a quizcmid that is not a quiz.
+     */
+    public function test_question_data_fragment_rejects_non_quiz_quizcmid(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $questiongenerator = $generator->get_plugin_generator('core_question');
+
+        $course = $generator->create_course();
+        $quiz = $this->create_test_quiz($course);
+        $assign = $generator->create_module('assign', ['course' => $course->id]);
+        $teacher = $generator->create_and_enrol($course, 'editingteacher');
+        $cat = $questiongenerator->create_question_category(
+            ['contextid' => \context_module::instance($quiz->cmid)->id],
+        );
+
+        $this->setUser($teacher);
+        $this->expectException(\dml_missing_record_exception::class);
+        mod_quiz_output_fragment_question_data(
+            $this->question_data_fragment_args($assign, $course, $cat->id, bankcmid: $quiz->cmid),
+        );
+    }
+
+    /**
+     * The question_data fragment rejects a bank cmid of a module without a question bank.
+     */
+    public function test_question_data_fragment_rejects_non_bank_cmid(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $questiongenerator = $generator->get_plugin_generator('core_question');
+
+        $course = $generator->create_course();
+        $quiz = $this->create_test_quiz($course);
+        $assign = $generator->create_module('assign', ['course' => $course->id]);
+        $teacher = $generator->create_and_enrol($course, 'editingteacher');
+        $cat = $questiongenerator->create_question_category(
+            ['contextid' => \context_module::instance($quiz->cmid)->id],
+        );
+
+        $this->setUser($teacher);
+        $this->expectException(\invalid_parameter_exception::class);
+        mod_quiz_output_fragment_question_data(
+            $this->question_data_fragment_args($quiz, $course, $cat->id, bankcmid: $assign->cmid),
+        );
+    }
+
+    /**
+     * The custom_view constructor requires mod/quiz:manage on the quiz, so the question bank view
+     * cannot be reached through the core_question fragment with a quizcmid the user cannot manage.
+     */
+    public function test_custom_view_requires_manage_via_core_question_fragment(): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/question/lib.php');
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+
+        $c1 = $generator->create_course();
+        $c2 = $generator->create_course();
+        $ownquiz = $this->create_test_quiz($c1);
+        $foreignquiz = $this->create_test_quiz($c2);
+        $teacher = $generator->create_and_enrol($c1, 'editingteacher');
+
+        $args = [
+            'cmid' => $ownquiz->cmid,
+            'courseid' => $c1->id,
+            'view' => \mod_quiz\question\bank\custom_view::class,
+            'filter' => '{}',
+            'jointype' => '1',
+            'qpage' => '0',
+            'qperpage' => '100',
+            'sortdata' => '{}',
+            'extraparams' => json_encode(['quizcmid' => $foreignquiz->cmid, 'requirebankswitch' => false]),
+        ];
+
+        $this->setUser($teacher);
+        $this->expectException(\required_capability_exception::class);
+        core_question_output_fragment_question_data($args);
     }
 }

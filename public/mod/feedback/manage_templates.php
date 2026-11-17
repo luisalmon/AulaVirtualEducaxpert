@@ -44,6 +44,7 @@ $url = new moodle_url('/mod/feedback/manage_templates.php', $params);
 $PAGE->set_url($url);
 
 $PAGE->set_heading($course->fullname);
+$PAGE->set_show_navigation_footer(false);
 
 /** @var \mod_feedback\output\renderer $renderer */
 $renderer = $PAGE->get_renderer('mod_feedback');
@@ -58,7 +59,7 @@ $PAGE->add_body_class('limitedwidth');
 if ($templateid) {
     require_sesskey();
     require_capability('mod/feedback:deletetemplate', $context);
-    $template = $DB->get_record('feedback_template', ['id' => $templateid], '*', MUST_EXIST);
+    $template = \mod_feedback\manager::get_template_record_if_accessible($templateid, $course->id);
 
     if ($template->ispublic) {
         require_capability('mod/feedback:createpublictemplate', $systemcontext);

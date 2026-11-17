@@ -1771,8 +1771,9 @@ EOF;
     /**
      * Given the text of a link, download the linked file and return the contents.
      *
-     * A helper method used by the steps in {@see behat_download}, and the legacy
-     * {@see following_should_download_bytes()} and {@see following_should_download_between_and_bytes()}.
+     * A helper method used by the legacy {@see following_should_download_bytes()} and
+     * {@see following_should_download_between_and_bytes()} steps. New code should use
+     * {@see behat_download::download_file()}, which works with any element, not just links.
      *
      * @param string $link the text of the link.
      * @param string $containerlocator optional container element locator.
@@ -1781,34 +1782,12 @@ EOF;
      * @return string the content of the downloaded file.
      */
     public function download_file_from_link(string $link, string $containerlocator = '', string $containertype = ''): string {
-
-        // Find the link.
-        if ($containerlocator !== '' && $containertype !== '') {
-            $linknode = $this->get_node_in_container('link', $link, $containertype, $containerlocator);
-        } else {
-            $linknode = $this->find_link($link);
-        }
-
-        $this->ensure_node_is_visible($linknode);
-
-        // Get the href and check it.
-        $url = $linknode->getAttribute('href');
-        if (!$url) {
-            throw new ExpectationException(
-                'Download link does not have href attribute',
-                $this->getSession()
-            );
-        }
-        if (!preg_match('~^https?://~', $url)) {
-            throw new ExpectationException(
-                'Download link not an absolute URL: ' . $url,
-                $this->getSession()
-            );
-        }
-
-        // Download the URL and check the size.
-        $session = $this->getSession()->getCookie('MoodleSession');
-        return download_file_content($url, ['Cookie' => 'MoodleSession=' . $session]);
+        return behat_context_helper::get('behat_download')->download_file(
+            $link,
+            $containerlocator,
+            $containertype,
+            'link',
+        );
     }
 
     /**
@@ -2303,6 +2282,23 @@ EOF;
         }
 
         throw new \Moodle\BehatExtension\Exception\SkippedException();
+    }
+
+    /**
+     * Skips the current scenario if the run was started with a colour mode.
+     *
+     * The --colourmode option overrides the colour mode settings of the site, so a scenario about those settings
+     * cannot assert anything while it is in use.
+     *
+     * @Given the run is not using a colour mode
+     * @throws \Moodle\BehatExtension\Exception\SkippedException
+     */
+    public function the_run_is_not_using_a_colour_mode(): void {
+        if (behat_config_manager::get_behat_run_config_value('colourmode')) {
+            throw new \Moodle\BehatExtension\Exception\SkippedException(
+                'Skipping this scenario because the run was started with a colour mode.'
+            );
+        }
     }
 
     /**

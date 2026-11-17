@@ -141,6 +141,13 @@ abstract class testing_util {
     }
 
     /**
+     * Reset the original data.
+     */
+    protected static function reset_original_data() {
+        self::$originaldatafilesjsonadded = false;
+    }
+
+    /**
      * Get data generator
      *
      * @return \testing_data_generator
@@ -1012,6 +1019,17 @@ abstract class testing_util {
     }
 
     /**
+     * Get the path to the root of the package Moodle is installed in.
+     *
+     * @return bool|string
+     */
+    public static function get_package_root(): string {
+        global $CFG;
+
+        return \core\composer::locate_package_root_directory($CFG->root);
+    }
+
+    /**
      * Get the path to the Moodle root, relative to the root package.
      *
      * @return string
@@ -1024,7 +1042,7 @@ abstract class testing_util {
             return '';
         }
 
-        $rootpath = realpath(\Composer\InstalledVersions::getRootPackage()['install_path']);
+        $rootpath = self::get_package_root();
 
         $moodlepath = realpath($CFG->root);
         if ($rootpath === $moodlepath) {

@@ -28,6 +28,9 @@ use mod_forum_external;
  * @copyright  2012 Mark Nelson <markn@moodle.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_forum\event\discussion_lock_updated::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_forum_external::class, 'set_lock_state')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\mod_forum_external::class, 'set_subscription_state')]
 final class externallib_test extends \core_external\tests\externallib_testcase {
     /**
      * Tests set up
@@ -39,6 +42,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         // We must clear the subscription caches. This has to be done both before each test, and after in case of other
         // tests using these functions.
         \mod_forum\subscriptions::reset_forum_cache();
+        \mod_forum\subscriptions::reset_discussion_cache();
 
         require_once($CFG->dirroot . '/mod/forum/externallib.php');
     }
@@ -47,6 +51,7 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         // We must clear the subscription caches. This has to be done both before each test, and after in case of other
         // tests using these functions.
         \mod_forum\subscriptions::reset_forum_cache();
+        \mod_forum\subscriptions::reset_discussion_cache();
         parent::tearDown();
     }
 
@@ -173,51 +178,83 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         }
         $enrol->enrol_user($instance2, $user->id);
 
+        // Reset static cache.
+        $forum1cm = get_coursemodule_from_id('forum', $forum1->cmid, 0, false, MUST_EXIST);
+        $forum1section = $DB->get_record('course_sections', ['id' => $forum1cm->section], 'section', MUST_EXIST);
+        forum_tp_count_forum_unread_posts($forum1cm, $course1, true);
+        $forum2cm = get_coursemodule_from_id('forum', $forum2->cmid, 0, false, MUST_EXIST);
+        $forum2section = $DB->get_record('course_sections', ['id' => $forum2cm->section], 'section', MUST_EXIST);
+        forum_tp_count_forum_unread_posts($forum2cm, $course2, true);
+
         // Assign capabilities to view forums for forum 2.
-        $cm2 = get_coursemodule_from_id('forum', $forum2->cmid, 0, false, MUST_EXIST);
-        $context2 = \context_module::instance($cm2->id);
+        $context2 = \context_module::instance($forum2cm->id);
         $newrole = create_role('Role 2', 'role2', 'Role 2 description');
         $roleid2 = $this->assignUserCapability('mod/forum:viewdiscussion', $context2->id, $newrole);
-
-        // Create what we expect to be returned when querying the two courses.
-        unset($forum1->displaywordcount);
-        unset($forum2->displaywordcount);
-
-        $expectedforums = array();
-        $expectedforums[$forum1->id] = (array) $forum1;
-        $expectedforums[$forum2->id] = (array) $forum2;
-
-        // Reset static cache.
-        $forum1cm = get_coursemodule_from_id('forum', $forum1->cmid);
-        forum_tp_count_forum_unread_posts($forum1cm, $course1, true);
-        $forum2cm = get_coursemodule_from_id('forum', $forum2->cmid);
-        forum_tp_count_forum_unread_posts($forum2cm, $course2, true);
 
         // Call the external function passing course ids.
         $forums = mod_forum_external::get_forums_by_courses(array($course1->id, $course2->id));
         $forums = external_api::clean_returnvalue(mod_forum_external::get_forums_by_courses_returns(), $forums);
         $this->assertCount(2, $forums);
+
+        // Index results by id for easier checks.
+        $forumsbyid = [];
         foreach ($forums as $forum) {
-            $this->assertEquals($expectedforums[$forum['id']], $forum);
+            $forumsbyid[$forum['id']] = $forum;
         }
 
-        // Call the external function without passing course id.
-        $forums = mod_forum_external::get_forums_by_courses();
-        $forums = external_api::clean_returnvalue(mod_forum_external::get_forums_by_courses_returns(), $forums);
-        $this->assertCount(2, $forums);
-        foreach ($forums as $forum) {
-            $this->assertEquals($expectedforums[$forum['id']], $forum);
-        }
+        $this->assertArrayHasKey($forum1->id, $forumsbyid);
+        $this->assertArrayHasKey($forum2->id, $forumsbyid);
 
-        // Unenrol user from second course and alter expected forums.
+        $returnedforum1 = $forumsbyid[$forum1->id];
+        $this->assertEquals($forum1->id, $returnedforum1['id']);
+        $this->assertEquals($course1->id, $returnedforum1['course']);
+        $this->assertEquals($forum1->name, $returnedforum1['name']);
+        $this->assertEquals($forum1->intro, $returnedforum1['intro']);
+        $this->assertEquals($forum1->introformat, $returnedforum1['introformat']);
+        $this->assertEquals($forum1->trackingtype, $returnedforum1['trackingtype']);
+        $this->assertEquals($forum1->numdiscussions, $returnedforum1['numdiscussions']);
+        $this->assertEquals($forum1->cancreatediscussions, $returnedforum1['cancreatediscussions']);
+        $this->assertEquals($forum1->istracked, $returnedforum1['istracked']);
+        $this->assertEquals($forum1->unreadpostscount, $returnedforum1['unreadpostscount']);
+        $this->assertEquals($forum1->lang, $returnedforum1['lang']);
+        $this->assertEquals($forum1->introfiles, $returnedforum1['introfiles']);
+        $this->assertEquals($forum1cm->id, $returnedforum1['coursemodule']);
+        $this->assertArrayNotHasKey('section', $returnedforum1);
+        $this->assertArrayNotHasKey('visible', $returnedforum1);
+        $this->assertArrayNotHasKey('groupmode', $returnedforum1);
+        $this->assertArrayNotHasKey('groupingid', $returnedforum1);
+        $this->assertArrayNotHasKey('enableaitools', $returnedforum1);
+        $this->assertArrayNotHasKey('enabledaiactions', $returnedforum1);
+
+        $returnedforum2 = $forumsbyid[$forum2->id];
+        $this->assertEquals($forum2->id, $returnedforum2['id']);
+        $this->assertEquals($course2->id, $returnedforum2['course']);
+        $this->assertEquals($forum2->name, $returnedforum2['name']);
+        $this->assertEquals($forum2->intro, $returnedforum2['intro']);
+        $this->assertEquals($forum2->introformat, $returnedforum2['introformat']);
+        $this->assertEquals($forum2->trackingtype, $returnedforum2['trackingtype']);
+        $this->assertEquals($forum2->numdiscussions, $returnedforum2['numdiscussions']);
+        $this->assertEquals($forum2->cancreatediscussions, $returnedforum2['cancreatediscussions']);
+        $this->assertEquals($forum2->istracked, $returnedforum2['istracked']);
+        $this->assertEquals($forum2->lang, $returnedforum2['lang']);
+        $this->assertEquals($forum2->introfiles, $returnedforum2['introfiles']);
+        $this->assertEquals($forum2cm->id, $returnedforum2['coursemodule']);
+        $this->assertArrayNotHasKey('section', $returnedforum2);
+        $this->assertArrayNotHasKey('visible', $returnedforum2);
+        $this->assertArrayNotHasKey('groupmode', $returnedforum2);
+        $this->assertArrayNotHasKey('groupingid', $returnedforum2);
+        $this->assertArrayNotHasKey('enableaitools', $returnedforum2);
+        $this->assertArrayNotHasKey('enabledaiactions', $returnedforum2);
+
+        // Unenrol user from second course and verify only the first forum is returned.
         $enrol->unenrol_user($instance2, $user->id);
-        unset($expectedforums[$forum2->id]);
 
         // Call the external function without passing course id.
         $forums = mod_forum_external::get_forums_by_courses();
         $forums = external_api::clean_returnvalue(mod_forum_external::get_forums_by_courses_returns(), $forums);
         $this->assertCount(1, $forums);
-        $this->assertEquals($expectedforums[$forum1->id], $forums[0]);
+
+        $this->assertEquals($forum1->id, $forums[0]['id']);
         $this->assertTrue($forums[0]['cancreatediscussions']);
 
         // Change the type of the forum, the user shouldn't be able to add discussions.
@@ -1709,10 +1746,8 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
 
     }
 
-    /*
+    /**
      * Test set_lock_state.
-     *
-     * @covers \mod_forum\event\discussion_lock_updated
      */
     public function test_set_lock_state(): void {
         global $DB;
@@ -1782,6 +1817,75 @@ final class externallib_test extends \core_external\tests\externallib_testcase {
         $this->assertEventContextNotUsed($event);
         $this->assertNotEmpty($event->get_name());
         $this->assertStringContainsString(' unlocked the discussion:', $event->get_description());
+    }
+
+    /**
+     * set_lock_state must reject a discussion that does not belong to the supplied forum.
+     */
+    public function test_set_lock_state_discussion_not_in_forum(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        // Two forums; the discussion belongs to the second one.
+        $course = self::getDataGenerator()->create_course();
+        $forum = self::getDataGenerator()->create_module('forum', ['course' => $course->id]);
+        $otherforum = self::getDataGenerator()->create_module('forum', ['course' => $course->id]);
+
+        $generator = self::getDataGenerator()->get_plugin_generator('mod_forum');
+        $discussion = $generator->create_discussion([
+            'course' => $course->id,
+            'forum' => $otherforum->id,
+            'userid' => get_admin()->id,
+        ]);
+
+        self::setAdminUser();
+
+        // The discussion id does not match the supplied forum id.
+        try {
+            mod_forum_external::set_lock_state($forum->id, $discussion->id, 0);
+            $this->fail('Exception expected due to discussion not belonging to the forum.');
+        } catch (\moodle_exception $e) {
+            $this->assertEquals('invaliddiscussionid', $e->errorcode);
+        }
+
+        // The discussion must not have been locked.
+        $this->assertEquals(0, $DB->get_field('forum_discussions', 'timelocked', ['id' => $discussion->id]));
+    }
+
+    /**
+     * set_subscription_state must reject a discussion that does not belong to the supplied forum.
+     */
+    public function test_set_subscription_state_discussion_not_in_forum(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+
+        // Two forums; the discussion belongs to the second one.
+        $course = self::getDataGenerator()->create_course();
+        $forum = self::getDataGenerator()->create_module('forum', ['course' => $course->id]);
+        $otherforum = self::getDataGenerator()->create_module('forum', ['course' => $course->id]);
+
+        $generator = self::getDataGenerator()->get_plugin_generator('mod_forum');
+        $discussion = $generator->create_discussion([
+            'course' => $course->id,
+            'forum' => $otherforum->id,
+            'userid' => get_admin()->id,
+        ]);
+
+        self::setAdminUser();
+
+        // The discussion id does not match the supplied forum id.
+        try {
+            mod_forum_external::set_subscription_state($forum->id, $discussion->id, true);
+            $this->fail('Exception expected due to discussion not belonging to the forum.');
+        } catch (\moodle_exception $e) {
+            $this->assertEquals('invaliddiscussionid', $e->errorcode);
+        }
+
+        // The user must not have been subscribed to the discussion.
+        $this->assertFalse($DB->record_exists('forum_discussion_subs', [
+            'userid' => get_admin()->id,
+            'discussion' => $discussion->id,
+        ]));
     }
 
     /*

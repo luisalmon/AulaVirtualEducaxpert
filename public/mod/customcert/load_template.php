@@ -18,11 +18,10 @@
  * Handles loading a customcert template.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-use action_link;
 use mod_customcert\page_helper;
 use mod_customcert\service\template_load_service;
 use mod_customcert\service\template_repository;
@@ -53,17 +52,14 @@ if ($template->get_context()->contextlevel == CONTEXT_MODULE) {
     $title = $SITE->fullname;
 }
 
-// Check that they have confirmed they wish to load the template.
 if ($confirm && confirm_sesskey()) {
     $service = template_load_service::create();
     $service->replace($template->get_id(), $loadtemplate->get_id());
 
-    // Redirect.
     $url = new moodle_url('/mod/customcert/edit.php', ['tid' => $tid]);
     redirect($url);
 }
 
-// Create the link options.
 $nourl = new moodle_url('/mod/customcert/edit.php', ['tid' => $tid]);
 $yesurl = new moodle_url('/mod/customcert/load_template.php', ['tid' => $tid,
                                                                     'ltid' => $ltid,
@@ -80,7 +76,6 @@ $link = new moodle_url('/mod/customcert/edit.php', ['tid' => $template->get_id()
 $PAGE->navbar->add($str, new action_link($link, $str));
 $PAGE->navbar->add(get_string('loadtemplate', 'customcert'));
 
-// Show a confirmation page.
 echo $OUTPUT->header();
 echo $OUTPUT->confirm(get_string('loadtemplatemsg', 'customcert'), $yesurl, $nourl);
 echo $OUTPUT->footer();

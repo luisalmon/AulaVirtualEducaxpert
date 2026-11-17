@@ -29,8 +29,8 @@ use core_course\local\entity\string_title;
  * @subpackage course
  * @copyright  2020 Jake Dallimore <jrhdallimore@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers     \core_course\local\entity\content_item
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\core_course\local\entity\content_item::class)]
 final class content_item_test extends \advanced_testcase {
 
     /**
@@ -98,6 +98,52 @@ final class content_item_test extends \advanced_testcase {
         $this->assertFalse($contentitem->is_branded());
         $this->assertFalse($contentitem->is_gradable());
         $this->assertNull($contentitem->get_other_purpose());
+    }
+
+    /**
+     * Test that is_disabled() returns false and get_disabled_reason() returns null by default.
+     */
+    public function test_content_item_not_disabled_by_default(): void {
+        $this->resetAfterTest();
+
+        $contentitem = new content_item(
+            id: 22,
+            name: 'Item name',
+            title: new lang_string_title('modulename', 'mod_assign'),
+            link: new \moodle_url('mod_edit.php'),
+            icon: '<img src="test">',
+            help: 'Description of the module',
+            archetype: MOD_ARCHETYPE_RESOURCE,
+            componentname: 'mod_page',
+            purpose: MOD_PURPOSE_CONTENT,
+        );
+
+        $this->assertFalse($contentitem->is_disabled());
+        $this->assertNull($contentitem->get_disabled_reason());
+    }
+
+    /**
+     * Test that a disabled content item exposes the disabled state and reason.
+     */
+    public function test_content_item_disabled(): void {
+        $this->resetAfterTest();
+
+        $contentitem = new content_item(
+            id: 22,
+            name: 'Item name',
+            title: new lang_string_title('modulename', 'mod_assign'),
+            link: new \moodle_url('mod_edit.php'),
+            icon: '<img src="test">',
+            help: 'Description of the module',
+            archetype: MOD_ARCHETYPE_RESOURCE,
+            componentname: 'mod_page',
+            purpose: MOD_PURPOSE_CONTENT,
+            disabled: true,
+            disabledreason: 'Server not configured.',
+        );
+
+        $this->assertTrue($contentitem->is_disabled());
+        $this->assertEquals('Server not configured.', $contentitem->get_disabled_reason());
     }
 
     /**

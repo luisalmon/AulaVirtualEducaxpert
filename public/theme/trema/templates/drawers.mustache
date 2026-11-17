@@ -61,9 +61,17 @@
     {{#courseindex}}
         {{< theme_boost/drawer }}
             {{$id}}theme_boost-drawers-courseindex{{/id}}
+            {{$drawerheading}}
+                {{#hascourseindexheading}}{{> theme_boost/courseindexdrawerheading}}{{/hascourseindexheading}}
+            {{/drawerheading}}
+            {{! Moodle 4.3 to 5.2. }}
             {{$drawerheadercontent}}
                 {{> theme_boost/courseindexdrawercontrols}}
             {{/drawerheadercontent}}
+            {{! Moodle 5.3+. }}
+            {{$drawercontrols}}
+                {{> theme_boost/courseindexdrawercontrols}}
+            {{/drawercontrols}}
             {{$drawerclasses}}drawer drawer-left {{#courseindexopen}}show{{/courseindexopen}}{{/drawerclasses}}
             {{$drawercontent}}
                 {{{courseindex}}}
@@ -106,13 +114,19 @@
                             data-{{databs}}placement="right"
                             title="{{#str}}opendrawerindex, core{{/str}}"
                         >
-                            <span class="sr-only">{{#str}}opendrawerindex, core{{/str}}</span>
-                            {{#pix}} t/index_drawer, moodle {{/pix}}
+                            <span class="visually-hidden">{{#str}}opendrawerindex, core{{/str}}</span>
+                            {{#hassidebaricons}}
+                                <span class="dir-rtl-hide">{{#pix}} e/sidebar_left, core {{/pix}}</span>
+                                <span class="dir-ltr-hide">{{#pix}} e/sidebar_right, core {{/pix}}</span>
+                            {{/hassidebaricons}}
+                            {{^hassidebaricons}}
+                                {{#pix}} t/index_drawer, moodle {{/pix}}
+                            {{/hassidebaricons}}
                         </button>
                     </div>
                 {{/courseindex}}
                 {{#hasblocks}}
-                    <div class="drawer-toggler drawer-right-toggle ml-auto d-print-none">
+                    <div class="drawer-toggler drawer-right-toggle ms-auto d-print-none">
                         <button
                             class="btn icon-no-margin"
                             data-toggler="drawers"
@@ -122,9 +136,15 @@
                             data-{{databs}}placement="right"
                             title="{{#str}}opendrawerblocks, core{{/str}}"
                         >
-                            <span class="sr-only">{{#str}}opendrawerblocks, core{{/str}}</span>
-                            <span class="dir-rtl-hide">{{#pix}}t/blocks_drawer, core{{/pix}}</span>
-                            <span class="dir-ltr-hide">{{#pix}}t/blocks_drawer_rtl, core{{/pix}}</span>
+                            <span class="visually-hidden">{{#str}}opendrawerblocks, core{{/str}}</span>
+                            {{#hassidebaricons}}
+                                <span class="dir-rtl-hide">{{#pix}} e/sidebar_right, core {{/pix}}</span>
+                                <span class="dir-ltr-hide">{{#pix}} e/sidebar_left, core {{/pix}}</span>
+                            {{/hassidebaricons}}
+                            {{^hassidebaricons}}
+                                <span class="dir-rtl-hide">{{#pix}}t/blocks_drawer, core{{/pix}}</span>
+                                <span class="dir-ltr-hide">{{#pix}}t/blocks_drawer_rtl, core{{/pix}}</span>
+                            {{/hassidebaricons}}
                         </button>
                     </div>
                 {{/hasblocks}}
@@ -132,7 +152,9 @@
             {{{ output.full_header }}}
             {{#secondarymoremenu}}
                 <div class="secondary-navigation d-print-none">
-                    {{> core/moremenu}}
+                    {{! Moodle 5.3+ provides reactprops for the new navigation component. }}
+                    {{#reactprops}}{{> core/secondarymoremenu}}{{/reactprops}}
+                    {{^reactprops}}{{> core/moremenu}}{{/reactprops}}
                 </div>
             {{/secondarymoremenu}}
             <div id="page-content" class="pb-3 d-print-block">

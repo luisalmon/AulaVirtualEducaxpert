@@ -227,6 +227,18 @@ if ($ADMIN->fulltree) {
     $page->add($setting);
 
     // Slideshow.
+    $name = 'theme_moove/slideshowlayout';
+    $title = get_string('slideshowlayout', 'theme_moove');
+    $description = get_string('slideshowlayoutdesc', 'theme_moove');
+    $default = 'classic';
+    $options = [
+        'classic' => get_string('slideshowlayoutclassic', 'theme_moove'),
+        'centered' => get_string('slideshowlayoutcentered', 'theme_moove'),
+        'editorial' => get_string('slideshowlayouteditorial', 'theme_moove'),
+    ];
+    $setting = new admin_setting_configselect($name, $title, $description, $default, $options);
+    $page->add($setting);
+
     $name = 'theme_moove/slidercount';
     $title = get_string('slidercount', 'theme_moove');
     $description = get_string('slidercountdesc', 'theme_moove');
@@ -236,7 +248,6 @@ if ($ADMIN->fulltree) {
         $options[$i] = $i;
     }
     $setting = new admin_setting_configselect($name, $title, $description, $default, $options);
-    $setting->set_updatedcallback('theme_reset_all_caches');
     $page->add($setting);
 
     // If we don't have an slide yet, default to the preset.
@@ -461,6 +472,20 @@ if ($ADMIN->fulltree) {
     $setting = new admin_setting_configtext($name, $title, $description, '');
     $page->add($setting);
 
+    // Enable whatsapp floating button.
+    $name = 'theme_moove/enablewhatsappbutton';
+    $title = get_string('enablewhatsappbutton', 'theme_moove');
+    $description = get_string('enablewhatsappbutton_desc', 'theme_moove');
+    $setting = new admin_setting_configcheckbox($name, $title, $description, 0);
+    $page->add($setting);
+
+    // Whatsapp floating button message.
+    $name = 'theme_moove/whatsappbuttonmessage';
+    $title = get_string('whatsappbuttonmessage', 'theme_moove');
+    $description = get_string('whatsappbuttonmessagedesc', 'theme_moove');
+    $setting = new admin_setting_configtext($name, $title, $description, '', PARAM_TEXT);
+    $page->add($setting);
+
     // Telegram url setting.
     $name = 'theme_moove/telegram';
     $title = get_string('telegram', 'theme_moove');
@@ -475,15 +500,33 @@ if ($ADMIN->fulltree) {
     * Footer settings tab
     * --------------------
     */
-    $page = new admin_settingpage('theme_moove_darkmode', get_string('darkmodesettings', 'theme_moove'));
+    $page = new admin_settingpage('theme_moove_colourmode', get_string('colourmodesettings', 'theme_moove'));
 
-    // Enable dark mode footer.
-    $name = 'theme_moove/enabledarkmode';
-    $title = get_string('darkmode_enable', 'theme_moove');
-    $default = 1;
-    $choices = [0 => get_string('no'), 1 => get_string('yes')];
-    $setting = new admin_setting_configselect($name, $title, '', $default, $choices);
+    // Colour modes. Off until a site opts in, because a plugin which has not been checked in dark mode can still
+    // draw its pages in light colours.
+    $name = 'theme_moove/enablecolourmodes';
+    $title = get_string('enablecolourmodes', 'theme_moove');
+    $description = get_string('enablecolourmodes_desc', 'theme_moove');
+    $setting = new admin_setting_configcheckbox($name, $title, $description, 0);
     $page->add($setting);
+
+    // Light while colour modes are experimental. Following the device would put everyone whose device asks for dark
+    // into dark mode the moment a site ticks the setting above, including the guests and users who are not logged in
+    // who never get the switcher to change it back. MDL-89379 restores the device default once the components have
+    // all been converted.
+    $name = 'theme_moove/defaultcolourmode';
+    $title = get_string('defaultcolourmode', 'theme_moove');
+    $description = get_string('defaultcolourmode_desc', 'theme_moove');
+    $choices = [];
+    foreach (\theme_moove\colour_mode::get_modes() as $mode) {
+        $choices[$mode] = get_string('colourmode:' . $mode, 'theme_moove');
+    }
+    $setting = new admin_setting_configselect($name, $title, $description, \theme_moove\colour_mode::LIGHT, $choices);
+    $page->add($setting);
+    // The dependency goes on the tabs page rather than the tab: admin/settings.php reads the dependencies from the
+    // top level page, and theme_moove_admin_settingspage_tabs::add_tab() copies a tab's settings up but not its
+    // dependencies, so one recorded on the tab never reaches the JavaScript.
+    $settings->hide_if('theme_moove/defaultcolourmode', 'theme_moove/enablecolourmodes', 'notchecked');
 
     // Logo file setting.
     $name = 'theme_moove/logodark';
@@ -492,6 +535,8 @@ if ($ADMIN->fulltree) {
     $opts = ['accepted_types' => ['.png', '.jpg', '.gif', '.webp', '.tiff', '.svg'], 'maxfiles' => 1];
     $setting = new admin_setting_configstoredfile($name, $title, $description, 'logodark', 0, $opts);
     $page->add($setting);
+
+    $settings->hide_if('theme_moove/logodark', 'theme_moove/enablecolourmodes', 'notchecked');
 
     $settings->add($page);
 }

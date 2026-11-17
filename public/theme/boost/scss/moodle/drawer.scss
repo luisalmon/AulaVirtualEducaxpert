@@ -7,9 +7,61 @@ $drawer-right-width: 315px !default;
 $drawer-padding-x: 20px !default;
 $drawer-padding-y: 20px !default;
 $drawer-offscreen-gutter: 20px !default;
-$drawer-bg-color: $gray-100 !default;
-$drawer-scroll-bg-track: $gray-100 !default;
+$drawer-left-bg-color: var(--#{$prefix}gray-200) !default;
+$drawer-right-bg-color: var(--#{$prefix}gray-100) !default;
 $drawer-shadow-color: rgba(0, 0, 0, .25) !default;
+
+$drawer-main-gap: calc(0.5rem + 20px);
+// Line up the drawers with the page title.
+$drawer-anchored-top-gap: 3rem !default;
+$drawer-anchored-bottom-gap: 1rem !default;
+$drawer-anchored-content-bottom-gap: 1rem !default;
+// The wrapper is pulled up by this amount and the same value is re-added as
+// header padding, so the header content stays aligned with the page title
+// while the drawer's rounded top edge gets some breathing room above it.
+$drawer-anchored-header-padding: 0.5rem !default;
+$drawer-anchored-header-bottom-gap: 0.5rem !default;
+$drawer-anchored-top-offset: calc(#{$navbar-height} + #{$drawer-anchored-top-gap} - #{$drawer-anchored-header-padding});
+$drawer-anchored-vertical-offset: calc(#{$drawer-anchored-top-offset} + #{$drawer-anchored-bottom-gap});
+$drawer-anchored-toggler-top: calc(#{$navbar-height} + #{$drawer-anchored-top-gap});
+$drawer-anchor-none: calc(50% + #{$course-content-maxwidth} / 2 + #{$drawer-main-gap});
+// lg+: the page reserves room for each open drawer (layout.scss) and the drawers are anchored from that same
+// reserve, so the screen-edge gap, the drawer-to-content gap and the content width cannot drift apart.
+$drawer-edge-gap: var(--mds-spacing-lg, 1.25rem) !default;
+$drawer-content-gap: 20px !default;
+// The course content sits inside the padding of .main-inner (0.5rem) and of the main region (15px).
+// A page with different padding sets --drawer-content-inset on the body (see .single-section-page).
+$course-content-inset: calc(0.5rem + 15px) !default;
+$drawer-content-inset: var(--drawer-content-inset, #{$course-content-inset});
+// Drawer to .main-inner edge. Negative, as the course content is inset from .main-inner.
+$drawer-main-offset: calc(#{$drawer-content-gap} - #{$drawer-content-inset});
+// A drawer toggle button is inset by this margin from its wrapper.
+$drawer-toggler-margin: 16px !default;
+$drawer-left-reserve: calc(#{$drawer-left-width} + #{$drawer-edge-gap} + #{$drawer-main-offset});
+$drawer-right-reserve: calc(#{$drawer-right-width} + #{$drawer-edge-gap} + #{$drawer-main-offset});
+// Room beside a closed drawer for its toggle button, with the same gaps as an open drawer.
+$drawer-toggle-reserve: calc(#{$drawer-edge-gap} + #{$icon-medium-width} + #{$drawer-content-gap} - #{$drawer-content-inset});
+// Closed toggle button position that keeps the screen-edge gap, for when there is no room to anchor to .main-inner.
+$drawer-toggle-edge-anchor: calc(100% - #{$icon-medium-width} - #{$drawer-edge-gap} - #{$drawer-toggler-margin});
+
+// Position of the left drawer (as `right`), or of its toggle when $shift is set, for the given reserves.
+// Min() picks the smaller: beside .main-inner when there is room, else the drawer keeps its screen-edge gap.
+@function drawer-left-anchor($reserve-left, $reserve-right, $shift: null) {
+    $tail: if($shift, " - #{$shift}", "");
+    $edge: "calc(100% - #{$reserve-left} + #{$drawer-main-offset}#{$tail})";
+    $centred: "calc(50% + #{$course-content-maxwidth} / 2 + "
+        + "(#{$reserve-right} - #{$reserve-left}) / 2 + #{$drawer-main-offset}#{$tail})";
+    @return unquote("Min(#{$edge}, #{$centred})");
+}
+
+// Position of the right drawer (as `left`), or of its toggle when $shift is set, for the given reserves.
+@function drawer-right-anchor($reserve-left, $reserve-right, $shift: null) {
+    $tail: if($shift, " - #{$shift}", "");
+    $edge: "calc(100% - #{$reserve-right} + #{$drawer-main-offset}#{$tail})";
+    $centred: "calc(50% + #{$course-content-maxwidth} / 2 + "
+        + "(#{$reserve-left} - #{$reserve-right}) / 2 + #{$drawer-main-offset}#{$tail})";
+    @return unquote("Min(#{$edge}, #{$centred})");
+}
 
 :target,
 :focus {
@@ -121,9 +173,8 @@ $right-drawer-width: 320px;
         position: fixed;
         top: $navbar-height;
         right: 0;
-        height: calc(100% - #{$navbar-height});
+        height: calc(100vh - #{$navbar-height}); // Drawer opens below the navbar, so it doesn't cover it.
         width: $right-drawer-width;
-        box-shadow: -2px 2px 4px $drawer-shadow-color;
         padding: 0;
         visibility: visible;
         opacity: 1;
@@ -142,43 +193,49 @@ $right-drawer-width: 320px;
 }
 
 @include media-breakpoint-down(md) {
-    [data-region=right-hand-drawer] {
-        &.drawer {
-            top: 0;
-            height: 100%;
-            z-index: $zindex-fixed + 1;
-        }
-    }
     body.drawer-open-left,
     body.drawer-open-right {
         overflow: hidden;
     }
 }
 
-.dir-rtl {
-    [data-region=right-hand-drawer] {
-        box-shadow: 2px 2px 4px $drawer-shadow-color;
-    }
-}
-
 @mixin drawer() {
-    background-color: $drawer-bg-color;
     // Drawers has a z-index higher than the page content,
     // lower than the top navbar and the sticky footer,
     // and lower to the message drawer.
     z-index: $zindex-sticky - 5;
 
     @include media-breakpoint-down(lg) {
-        // In small screens the drawer goes over the top navbar with a modal with a backdrop effect.
-        z-index: $zindex-fixed + 5;
+        // In small screens the drawer acts as a modal with a backdrop effect.
+        // It is displayed below the fixed top navbar so the navbar remains visible and clickable while a drawer is open.
+        // The z-index keeps the drawer above any sticky page content ($zindex-sticky) but below the top navbar ($zindex-fixed).
+        z-index: $zindex-sticky + 1;
+        top: $navbar-height;
+        height: calc(100vh - #{$navbar-height});
     }
 
     position: fixed;
     height: 100vh;
     top: 0;
+    display: flex;
+    flex-direction: column;
 
     &.not-initialized {
         display: none;
+    }
+
+    .drawerheader {
+        .draweractions {
+            .btn {
+                width: $icon-medium-width;
+                height: $icon-medium-width; // Using the same value for width and height to make the button square.
+                background-color: var(--#{$prefix}gray-200);
+
+                &:hover {
+                    background-color: var(--#{$prefix}gray-400);
+                }
+            }
+        }
     }
 }
 
@@ -189,16 +246,26 @@ $right-drawer-width: 320px;
         max-width: $drawer-right-width;
         right: calc(-#{$drawer-right-width} + -10px);
         visibility: hidden;
-        @include box-shadow($box-shadow-drawer-right);
+        background-color: $drawer-right-bg-color;
 
         &.show {
             right: 0;
             visibility: visible;
         }
 
+        .drawerheadertop {
+            flex-direction: row-reverse;
+        }
+
         .drawertoggle {
             margin-left: auto;
             margin-right: map-get($spacers, 2);
+        }
+
+        .block-header {
+            &:has(> h3) {
+                border-bottom: $border-width solid $border-color;
+            }
         }
     }
     &.drawer-left {
@@ -207,7 +274,7 @@ $right-drawer-width: 320px;
         max-width: $drawer-left-width;
         left: calc(-#{$drawer-left-width} + -10px);
         visibility: hidden;
-        @include box-shadow($box-shadow-drawer-left);
+        background-color: $drawer-left-bg-color;
 
         &.show {
             left: 0;
@@ -254,6 +321,155 @@ $right-drawer-width: 320px;
             display: block;
         }
     }
+
+    .pagelayout-standard,
+    body.limitedwidth {
+        // Anchored drawers sit below the sticky footer, so they don't cover it.
+        .drawer.drawer-left,
+        .drawer.drawer-right {
+            z-index: map-get($zindex-levels, 2);
+            top: $drawer-anchored-top-offset;
+            @include border-radius();
+            height: auto;
+            max-height: calc(100vh - #{$drawer-anchored-vertical-offset} - var(--sticky-footer-total-height, 0px));
+            // Keeps the scrollable area, and its scrollbar, clear of the rounded corners.
+            padding-bottom: $drawer-anchored-content-bottom-gap;
+
+            .drawerheader {
+                flex-shrink: 0;
+                padding-top: $drawer-anchored-header-padding;
+
+                // Let the toggle button set the row height, so it lines up with
+                // the page title instead of sitting below it.
+                .drawerheadertop {
+                    height: auto;
+                    padding-bottom: $drawer-anchored-header-bottom-gap;
+                }
+            }
+
+            // The drawer is content-sized here, so the scrollable area must
+            // contribute its content height instead of a zero flex base.
+            .drawercontent {
+                flex-basis: auto;
+            }
+        }
+
+        .drawer.drawer-left {
+            left: auto;
+            right: $drawer-anchor-none;
+            width: 0;
+            min-width: 0;
+            max-width: $drawer-left-width;
+            overflow: clip;
+            overscroll-behavior: none;
+            @include transition(width 0.2s ease, right 0.2s ease, visibility 0.2s ease, max-height 0.2s ease);
+
+            &.show {
+                left: auto;
+                right: $drawer-anchor-none;
+                width: $drawer-left-width;
+            }
+
+            &:not(.show) .drawercontent {
+                overflow-y: hidden;
+            }
+        }
+
+        .drawer.drawer-right {
+            right: auto;
+            left: $drawer-anchor-none;
+            width: $drawer-right-width;
+            min-width: 0;
+            max-width: $drawer-right-width;
+            clip-path: inset(0 100% 0 0);
+            overscroll-behavior: none;
+            @include transition(clip-path 0.2s ease, left 0.2s ease, visibility 0.2s ease, max-height 0.2s ease);
+
+            &.show {
+                right: auto;
+                left: $drawer-anchor-none;
+                width: $drawer-right-width;
+                clip-path: inset(0 0 0 0);
+
+                // A focused skip link (.visually-hidden-focusable in core.scss) jumps to the top left of the screen,
+                // outside this box. clip-path hides anything outside the box, even a child that has escaped to `position: fixed`.
+                // Disable it so skip links within the block drawer will show up.
+                // Match the skip link rather than :focus-within, so the clip stays in place for the
+                // close button and the drawer keeps its closing animation.
+                &:has(.visually-hidden-focusable:focus) {
+                    clip-path: none;
+                }
+            }
+
+            &:not(.show) .drawercontent {
+                overflow-y: hidden;
+            }
+        }
+
+        // Course index only: the block drawer side keeps room for its toggle button.
+        &:has(#page.drawers.show-drawer-left):not(:has(#page.drawers.show-drawer-right)) {
+            $anchor-left: drawer-left-anchor($drawer-left-reserve, $drawer-toggle-reserve);
+            $anchor-right: drawer-right-anchor($drawer-left-reserve, $drawer-toggle-reserve);
+
+            .drawer.drawer-left {
+                right: $anchor-left;
+
+                &.show {
+                    right: $anchor-left;
+                }
+            }
+            .drawer.drawer-right {
+                left: $anchor-right;
+
+                &.show {
+                    left: $anchor-right;
+                }
+            }
+        }
+
+        // Block drawer only: the course index side keeps room for its toggle button.
+        &:has(#page.drawers.show-drawer-right):not(:has(#page.drawers.show-drawer-left)) {
+            $anchor-left: drawer-left-anchor($drawer-toggle-reserve, $drawer-right-reserve);
+            $anchor-right: drawer-right-anchor($drawer-toggle-reserve, $drawer-right-reserve);
+
+            .drawer.drawer-left {
+                right: $anchor-left;
+
+                &.show {
+                    right: $anchor-left;
+                }
+            }
+            .drawer.drawer-right {
+                left: $anchor-right;
+
+                &.show {
+                    left: $anchor-right;
+                }
+            }
+        }
+
+        // Both drawers open: anchor to main-inner edges, keeping the screen-edge gap when there is no room.
+        &:has(#page.drawers.show-drawer-left.show-drawer-right) {
+            $anchor-left: drawer-left-anchor($drawer-left-reserve, $drawer-right-reserve);
+            $anchor-right: drawer-right-anchor($drawer-left-reserve, $drawer-right-reserve);
+
+            .drawer.drawer-left {
+                right: $anchor-left;
+
+                &.show {
+                    right: $anchor-left;
+                }
+            }
+
+            .drawer.drawer-right {
+                left: $anchor-right;
+
+                &.show {
+                    left: $anchor-right;
+                }
+            }
+        }
+    }
 }
 
 .drawer-md,
@@ -262,11 +478,13 @@ $right-drawer-width: 320px;
 }
 
 .drawerheader {
-    padding: 0;
-    height: $navbar-height;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    .drawerheadertop {
+        padding: 0;
+        height: $navbar-height;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
     .sitename {
         overflow: hidden;
         white-space: nowrap;
@@ -274,11 +492,9 @@ $right-drawer-width: 320px;
         margin-right: 16px;
     }
     .draweractions {
-        display: flex;
-        gap: map-get($spacers, 1);
         margin-left: map-get($spacers, 2);
         .btn {
-            --#{$prefix}btn-color: #{$gray-700};
+            --#{$prefix}btn-color: var(--#{$prefix}gray-700);
         }
     }
 }
@@ -305,7 +521,9 @@ $right-drawer-width: 320px;
 .drawercontent {
     position: relative;
     z-index: -1;
-    height: calc(100% - #{$navbar-height});
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
     display: flex;
     flex-direction: column;
     flex-wrap: nowrap;
@@ -317,5 +535,10 @@ $right-drawer-width: 320px;
         white-space: normal;
     }
 
-    @include thin-scrolls($drawer-scroll-bg-track);
+    .drawer-left & {
+        @include thin-scrolls($drawer-left-bg-color);
+    }
+    .drawer-right & {
+        @include thin-scrolls($drawer-right-bg-color);
+    }
 }

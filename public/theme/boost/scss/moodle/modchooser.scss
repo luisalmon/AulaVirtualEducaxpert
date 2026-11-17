@@ -176,12 +176,18 @@
 
 .modchoosernav {
     --#{$prefix}nav-pills-border-radius: #{$border-radius-pill};
-    --#{$prefix}nav-pills-link-active-bg: #{$body-color};
+    --#{$prefix}nav-pills-link-active-bg: #{var(--#{$prefix}body-color)};
     --#{$prefix}nav-link-font-size: #{$font-size-base};
 
+    // The selected pill is filled with the body text colour, so its label has to be the page behind that text.
+    // Bootstrap's white only works while the fill is dark, which it is not once the page is.
+    @include dark-mode {
+        --#{$prefix}nav-pills-link-active-color: #{var(--#{$prefix}body-bg)};
+    }
+
     .nav-link {
-        --#{$prefix}nav-link-color: #{$body-color};
-        --#{$prefix}nav-link-hover-color: #{$body-color};
+        --#{$prefix}nav-link-color: #{var(--#{$prefix}body-color)};
+        --#{$prefix}nav-link-hover-color: #{var(--#{$prefix}body-color)};
         --#{$prefix}nav-link-font-weight: #{$font-weight-medium};
         --#{$prefix}nav-link-padding-y: .3rem;
 
@@ -198,7 +204,7 @@
         &:not(.active) {
             &:hover {
                 border: $border-width $border-style $border-color;
-                background-color: $gray-100;
+                background-color: var(--#{$prefix}gray-100);
             }
         }
     }
@@ -206,7 +212,7 @@
     @include media-breakpoint-down(md) {
         overflow-x: auto;
         white-space: nowrap;
-        background-color: $body-bg !important; /* stylelint-disable-line declaration-no-important */
+        background-color: var(--#{$prefix}body-bg) !important; /* stylelint-disable-line declaration-no-important */
 
         .nav-link {
             border: $border-width $border-style $border-color !important; /* stylelint-disable-line declaration-no-important */
@@ -242,7 +248,7 @@
         }
 
         &:not(.selected):hover {
-            background-color: $gray-100;
+            background-color: var(--#{$prefix}gray-100);
         }
 
         .optioninfo {
@@ -261,10 +267,22 @@
 /* Option summary styles. */
 
 .modchooser .optionsummary {
-    overflow-x: hidden;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     width: 100%;
-    background-color: $white;
+    border: var(--mds-stroke-weight-sm) solid var(--mds-border-subtle);
+    border-radius: var(--mds-border-radius-xl);
+    background-color: var(--mds-bg-surface-subtle);
+    padding-block: var(--mds-spacing-md);
+
+    [data-region="chooser-option-summary-content-container"] {
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding-inline: var(--mds-spacing-md);
+        @include thin-scrolls(var(--mds-bg-surface-subtle)); // stylelint-disable-line csstree/validator
+    }
 
     .activitychooser-option-details {
         min-width: 15rem;
@@ -307,10 +325,12 @@
         .modal-body .carousel,
         .modal-body .carousel-inner,
         .modal-body .carousel-item,
-        .modal-body .optionsummary,
         .modal-body .searchresultitemscontainer-wrapper {
             height: 100%;
             overflow-y: auto;
+        }
+        .modal-body .optionsummary {
+            height: 100%;
         }
     }
 

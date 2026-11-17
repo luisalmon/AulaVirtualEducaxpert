@@ -19,14 +19,14 @@ Feature: Primary navigation
     And the following config values are set as admin:
       | defaulthomepage | <defaulthomepageset> |
     And I am on homepage
-    And I should see "<homepage>" in the "a.nav-link.active:not([tabindex])" "css_element"
+    And I should see "<homepage>" in the ".primary-navigation a.mds-nav-pill--selected" "css_element"
     And I should see "<sitehome>" in the "<linkelement>" "css_element"
 
     Examples:
-      | defaulthomepageset | homepage    |  sitehome  |  linkelement                                                  |
-      |   0                | Home        |   Home     |  a.nav-link.active:not([tabindex]):not([href*='redirect=0'])  |
-      |   1                | Dashboard   |   Home     |  a.nav-link[tabindex='-1'][href$='redirect=0']                |
-      |   3                | My courses  |   Home     |  a.nav-link[tabindex='-1'][href$='redirect=0']                |
+      | defaulthomepageset | homepage   | sitehome | linkelement                                                                         |
+      | 0                  | Home       | Home     | .primary-navigation a.mds-nav-pill--selected:not([href*='redirect=0'])              |
+      | 1                  | Dashboard  | Home     | .primary-navigation a.mds-nav-pill[href$='redirect=0']:not(.mds-nav-pill--selected) |
+      | 3                  | My courses | Home     | .primary-navigation a.mds-nav-pill[href$='redirect=0']:not(.mds-nav-pill--selected) |
 
   @javascript @theme_boost
   Scenario Outline: Admin sets defaulthomepage to user preference and verifies the landing page based on it
@@ -42,7 +42,7 @@ Feature: Primary navigation
       | defaulthomepage | 2 |
     And I log out
     And I log in as "admin"
-    And I should see "<homepage>" in the "a.nav-link.active:not([tabindex])" "css_element"
+    And I should see "<homepage>" in the ".primary-navigation a.mds-nav-pill--selected" "css_element"
 
     Examples:
       | userpreference | homepage    |
@@ -60,6 +60,44 @@ Feature: Primary navigation
     And I should see "Home" in the "theme_boost-drawers-primary" "region"
     And I click on "[data-region='site-home-link']" "css_element"
     And I should see "Dashboard" in the "page-header" "region"
+
+  @javascript @theme_boost
+  Scenario: Users can use the side panel and user menu below 992px
+    Given the following config values are set as admin:
+      | enableglobalsearch | 1 |             |
+      | enablecolourmodes  | 1 | theme_boost |
+    And I change viewport size to "816x1024"
+    When I log in as "admin"
+    And I follow "Preferences" in the user menu
+    And I click on "Side panel" "button"
+    And I click on "Dashboard" "link" in the "theme_boost-drawers-primary" "region"
+    Then I should see "Dashboard" in the "page-header" "region"
+    And ".primary-navigation" "css_element" should not be visible
+    And "Search" "field" in the "usernavigation" "region" should not be visible
+
+  @javascript @theme_boost
+  Scenario: Users see the primary navigation and a search icon between 992px and 1199px
+    Given the following config values are set as admin:
+      | enableglobalsearch | 1 |             |
+      | enablecolourmodes  | 1 | theme_boost |
+    And I change viewport size to "1100x900"
+    When I log in as "admin"
+    And I click on "Toggle search input" "button"
+    Then "Search" "field" in the "usernavigation" "region" should be visible
+    And "Side panel" "button" should not be visible
+    And I should see "Home" in the ".primary-navigation" "css_element"
+
+  @javascript @theme_boost
+  Scenario: Users see the primary navigation and the search field from 1200px
+    Given the following config values are set as admin:
+      | enableglobalsearch | 1 |             |
+      | enablecolourmodes  | 1 | theme_boost |
+    And I change viewport size to "1366x900"
+    When I log in as "admin"
+    Then "Search" "field" in the "usernavigation" "region" should be visible
+    And "Toggle search input" "button" should not be visible
+    And "Side panel" "button" should not be visible
+    And I should see "Home" in the ".primary-navigation" "css_element"
 
   @theme_boost
   Scenario: Guest users can only see the Home and Calendar items in the primary navigation menu

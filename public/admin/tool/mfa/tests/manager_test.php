@@ -20,11 +20,13 @@ namespace tool_mfa;
  * Tests for MFA manager class.
  *
  * @package     tool_mfa
- * @covers      \tool_mfa\manager
  * @author      Peter Burnett <peterburnett@catalyst-au.net>
  * @copyright   Catalyst IT
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\tool_mfa\manager::class)]
+#[\PHPUnit\Framework\Attributes\CoversFunction('should_require_mfa')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('get_no_redirect_urls')]
 final class manager_test extends \advanced_testcase {
 
     use \tool_mfa\tests\mfa_settings_trait;
@@ -200,8 +202,8 @@ final class manager_test extends \advanced_testcase {
      * @param string $webroot
      * @param bool $status
      * @param array|null $params
-     * @dataProvider should_redirect_urls_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('should_redirect_urls_provider')]
     public function test_should_require_mfa_urls($urlstring, $webroot, $status, $params = null): void {
         $this->resetAfterTest(true);
         global $CFG;
@@ -296,8 +298,8 @@ final class manager_test extends \advanced_testcase {
         $themeurl = new \moodle_url('/pluginfile.php/1/theme_boost/loginbackgroundimage/0/background.jpg');
         $this->assertEquals(\tool_mfa\manager::NO_REDIRECT, \tool_mfa\manager::should_require_mfa($themeurl, false));
 
-        // Access a different theme pluginfile area which is not explicitly allowed.
-        $themeurl = new \moodle_url('/pluginfile.php/1/theme_classic/customfield/0/example.txt');
+        // Access a different pluginfile area of the same theme which is not explicitly allowed.
+        $themeurl = new \moodle_url('/pluginfile.php/1/theme_boost/customfield/0/example.txt');
         $this->assertEquals(\tool_mfa\manager::REDIRECT, \tool_mfa\manager::should_require_mfa($themeurl, false));
 
         // Access private area.
@@ -456,9 +458,6 @@ final class manager_test extends \advanced_testcase {
      * When a user follows an email self-registration confirmation link, MFA must
      * not intercept the request before auth_email::user_confirm() has had a chance
      * to restore the wantsurl from the auth_email_wantsurl user preference.
-     *
-     * @covers ::should_require_mfa
-     * @covers ::get_no_redirect_urls
      */
     public function test_confirm_url_no_redirect(): void {
         $this->resetAfterTest(true);

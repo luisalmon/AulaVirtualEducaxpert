@@ -69,7 +69,9 @@ EOF;
     }
 
     public function test_data_is_valid(): void {
-        $object = $this->getMockForAbstractClass(tool::class);
+        $object = $this->getMockBuilder(tool::class)
+            ->onlyMethods(['fetch_data', 'pluginname', 'toolname', 'toolshortname'])
+            ->getMock();
         $object->set_filter(new filter());
         $output = $object->data_is_valid();
         $this->assertFalse($output);
@@ -80,14 +82,18 @@ EOF;
         $category = $this->getDataGenerator()->create_category();
         $filter = new filter(1, $category->id, 'tab', 3, 4);
 
-        $tool = $this->getMockForAbstractClass(tool::class);
+        $tool = $this->getMockBuilder(tool::class)
+            ->onlyMethods(['fetch_data', 'pluginname', 'toolname', 'toolshortname'])
+            ->getMock();
 
         $output = $tool->can_access($filter);
         $this->assertFalse($output);
     }
 
     public function test_get_error_message(): void {
-        $tool = $this->getMockForAbstractClass(tool::class);
+        $tool = $this->getMockBuilder(tool::class)
+            ->onlyMethods(['fetch_data', 'pluginname', 'toolname', 'toolshortname'])
+            ->getMock();
 
         $output = $tool->get_error_message();
         $this->assertEquals($output, '');
@@ -150,10 +156,10 @@ EOF;
 
     /**
      * Test base 64 image provider.
-     * @dataProvider base64_img_provider
      * @param string $content
      * @param bool $expectation
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('base64_img_provider')]
     public function test_base64_img_detected(string $content, bool $expectation): void {
         $this->assertEquals(
             $expectation,

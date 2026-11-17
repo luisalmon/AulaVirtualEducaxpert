@@ -33,6 +33,16 @@ require_once($CFG->dirroot . '/calendar/tests/helpers.php');
 /**
  * Tests various classes and functions in upgradelib.php library.
  */
+#[\PHPUnit\Framework\Attributes\CoversFunction('check_mod_assignment')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('upgrade_add_item_to_usermenu')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('moodle_needs_upgrading')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('upgrade_started')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('upgrade_set_timeout')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('upgrade_change_binary_column_to_int')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('check_aurora_version')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('moodlenet_migrate_profile_field')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('upgrade_migrate_classic_theme_to_boost')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('upgrade_penalty_calculation_freeze')]
 final class upgradelib_test extends advanced_testcase {
 
     /**
@@ -777,11 +787,11 @@ final class upgradelib_test extends advanced_testcase {
     /**
      * Test that objects in serialized strings will be changed over to stdClass.
      *
-     * @dataProvider serialized_strings_dataprovider
      * @param string $initialstring The initial serialized setting.
      * @param bool $expectededited If the string is expected to be edited.
      * @param string $expectedresult The expected serialized setting to be returned.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('serialized_strings_dataprovider')]
     public function test_upgrade_fix_serialized_objects($initialstring, $expectededited, $expectedresult): void {
         list($edited, $resultstring) = upgrade_fix_serialized_objects($initialstring);
         $this->assertEquals($expectededited, $edited);
@@ -1357,7 +1367,6 @@ final class upgradelib_test extends advanced_testcase {
     /**
      * Test the check_mod_assignment check if mod_assignment is still used.
      *
-     * @covers ::check_mod_assignment
      * @return void
      */
     public function test_check_mod_assignment_is_used(): void {
@@ -1424,10 +1433,8 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test the functionality of the {@link upgrade_add_item_to_usermenu()} function.
-     *
-     * @covers ::upgrade_add_item_to_usermenu
-     * @dataProvider usermenu_items_dataprovider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('usermenu_items_dataprovider')]
     public function test_upgrade_add_item_to_usermenu(string $initialmenu, string $newmenuitem, string $expectedmenu): void {
         global $CFG;
 
@@ -1507,8 +1514,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test the upgrade status check alongside the outageless flags.
-     *
-     * @covers ::moodle_needs_upgrading
      */
     public function test_moodle_upgrade_check_outageless(): void {
         global $CFG;
@@ -1530,8 +1535,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test the upgrade status check alongside the outageless flags.
-     *
-     * @covers ::upgrade_started
      */
     public function test_moodle_start_upgrade_outageless(): void {
         global $CFG;
@@ -1554,8 +1557,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test the upgrade timeout setter alongside the outageless flags.
-     *
-     * @covers ::upgrade_set_timeout
      */
     public function test_moodle_set_upgrade_timeout_outageless(): void {
         global $CFG;
@@ -1578,10 +1579,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test the components of the upgrade process being run outageless.
-     *
-     * @covers ::moodle_needs_upgrading
-     * @covers ::upgrade_started
-     * @covers ::upgrade_set_timeout
      */
     public function test_upgrade_components_with_outageless(): void {
         global $CFG;
@@ -1640,14 +1637,13 @@ calendar,core_calendar|/calendar/view.php?view=month',
     /**
      * Unit test for {@see upgrade_change_binary_column_to_int()}.
      *
-     * @dataProvider upgrade_change_binary_column_to_int_provider
-     * @covers ::upgrade_change_binary_column_to_int()
      * @param int $type The field type.
      * @param string|null $length The field length.
      * @param bool $expectedresult Whether the conversion succeeded.
      * @param bool $expecexception Whether to expect an exception.
      * @return void
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('upgrade_change_binary_column_to_int_provider')]
     public function test_upgrade_change_binary_column_to_int(
         int $type,
         ?string $length,
@@ -1706,8 +1702,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test for upgrade script replacing full urls with relative urls in defaulthomepage setting
-     *
-     * @covers ::upgrade_change_binary_column_to_int()
      */
     public function test_upgrade_store_relative_url_sitehomepage(): void {
         global $CFG;
@@ -1734,8 +1728,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test the check_aurora_version check when the Moodle instance is not using Amazon Aurora as a database architecture.
-     *
-     * @covers ::check_aurora_version
      */
     public function test_check_aurora_version_is_not_used(): void {
         global $CFG;
@@ -1749,8 +1741,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test the check_aurora_version check when the Moodle instance is using Amazon Aurora as a database architecture.
-     *
-     * @covers ::check_aurora_version
      */
     public function test_check_aurora_version_is_used(): void {
         global $CFG;
@@ -1766,8 +1756,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
 
     /**
      * Test moodlenet_migrate_profile_field creates category, field and migrates data.
-     *
-     * @covers ::moodlenet_migrate_profile_field
      */
     public function test_moodlenet_migrate_profile_field(): void {
         global $DB;
@@ -1842,9 +1830,179 @@ calendar,core_calendar|/calendar/view.php?view=month',
     }
 
     /**
+     * Test migration of compatible Classic settings and files to Boost.
+     */
+    public function test_upgrade_migrate_classic_theme_to_boost(): void {
+        $this->resetAfterTest();
+
+        $systemcontext = context_system::instance();
+        $fs = get_file_storage();
+
+        set_config('theme', 'classic');
+
+        set_config('unaddableblocks', 'calendar_month,html', 'theme_classic');
+        set_config('preset', 'custompreset.scss', 'theme_classic');
+        set_config('brandcolor', '#112233', 'theme_classic');
+        set_config('presetfiles', 'classicpresetfilesvalue', 'theme_classic');
+        set_config('backgroundimage', 'classicbackgroundvalue', 'theme_classic');
+        set_config('loginbackgroundimage', 'classicloginbackgroundvalue', 'theme_classic');
+        set_config('scsspre', '/* classic scss pre */', 'theme_classic');
+        set_config('scss', '/* classic scss */', 'theme_classic');
+
+        set_config('unaddableblocks', 'oldblocks', 'theme_boost');
+        set_config('preset', 'oldpreset.scss', 'theme_boost');
+        set_config('brandcolor', '#aabbcc', 'theme_boost');
+        set_config('presetfiles', 'oldpresetfiles', 'theme_boost');
+        set_config('backgroundimage', 'oldbackground', 'theme_boost');
+        set_config('loginbackgroundimage', 'oldloginbackground', 'theme_boost');
+        set_config('scsspre', '/* boost scss pre */', 'theme_boost');
+        set_config('scss', '/* boost scss */', 'theme_boost');
+
+        $sourcefiles = [
+            'preset' => 'custompreset.scss',
+            'backgroundimage' => 'background.jpg',
+            'loginbackgroundimage' => 'loginbackground.jpg',
+        ];
+
+        foreach ($sourcefiles as $filearea => $filename) {
+            $fs->create_file_from_string([
+                'contextid' => $systemcontext->id,
+                'component' => 'theme_classic',
+                'filearea' => $filearea,
+                'itemid' => 0,
+                'filepath' => '/',
+                'filename' => $filename,
+            ], "classic {$filearea}");
+
+            $fs->create_file_from_string([
+                'contextid' => $systemcontext->id,
+                'component' => 'theme_boost',
+                'filearea' => $filearea,
+                'itemid' => 0,
+                'filepath' => '/',
+                'filename' => "old_{$filename}",
+            ], "old boost {$filearea}");
+        }
+
+        upgrade_migrate_classic_theme_to_boost();
+
+        $this->assertEquals('boost', get_config('core', 'theme'));
+
+        // The Classic value is migrated with the Boost default unaddable blocks appended.
+        $this->assertEquals('calendar_month,html,navigation,settings,course_list',
+            get_config('theme_boost', 'unaddableblocks'));
+        $this->assertEquals('#112233', get_config('theme_boost', 'brandcolor'));
+        $this->assertEquals('classicbackgroundvalue', get_config('theme_boost', 'backgroundimage'));
+        $this->assertEquals('classicloginbackgroundvalue', get_config('theme_boost', 'loginbackgroundimage'));
+
+        $this->assertEquals('/* classic scss pre */', get_config('theme_boost', 'scsspre'));
+        $this->assertEquals('/* classic scss */', get_config('theme_boost', 'scss'));
+
+        // Presets are theme-specific SCSS and are never migrated, so the Boost preset
+        // setting and files must be untouched.
+        $this->assertEquals('oldpreset.scss', get_config('theme_boost', 'preset'));
+        $this->assertEquals('oldpresetfiles', get_config('theme_boost', 'presetfiles'));
+        $files = $fs->get_area_files($systemcontext->id, 'theme_boost', 'preset', 0, 'id', false);
+        $this->assertCount(1, $files);
+        $this->assertEquals('old_custompreset.scss', reset($files)->get_filename());
+
+        foreach (['backgroundimage', 'loginbackgroundimage'] as $filearea) {
+            $filename = $sourcefiles[$filearea];
+            $files = $fs->get_area_files($systemcontext->id, 'theme_boost', $filearea, 0, 'id', false);
+            $this->assertCount(1, $files);
+
+            $file = reset($files);
+            $this->assertEquals($filename, $file->get_filename());
+            $this->assertEquals("classic {$filearea}", $file->get_content());
+        }
+    }
+
+    /**
+     * Test that Boost settings and files are kept when Classic was never customised.
+     */
+    public function test_upgrade_migrate_classic_theme_to_boost_unmodified_classic(): void {
+        $this->resetAfterTest();
+
+        $systemcontext = context_system::instance();
+        $fs = get_file_storage();
+
+        set_config('theme', 'classic');
+
+        // Classic settings stored with their default values, as saved by visiting the settings page.
+        set_config('unaddableblocks', '', 'theme_classic');
+        set_config('preset', 'default.scss', 'theme_classic');
+
+        // Existing Boost customisations which must survive the migration.
+        set_config('unaddableblocks', 'boostblocks', 'theme_boost');
+        set_config('preset', 'boostpreset.scss', 'theme_boost');
+        set_config('scss', '/* boost scss */', 'theme_boost');
+        set_config('backgroundimage', '/boostbackground.jpg', 'theme_boost');
+        $fs->create_file_from_string([
+            'contextid' => $systemcontext->id,
+            'component' => 'theme_boost',
+            'filearea' => 'backgroundimage',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'boostbackground.jpg',
+        ], 'boost background');
+
+        upgrade_migrate_classic_theme_to_boost();
+
+        $this->assertEquals('boost', get_config('core', 'theme'));
+
+        // Classic default values must not overwrite the Boost customisations.
+        $this->assertEquals('boostblocks', get_config('theme_boost', 'unaddableblocks'));
+        $this->assertEquals('boostpreset.scss', get_config('theme_boost', 'preset'));
+        $this->assertEquals('/* boost scss */', get_config('theme_boost', 'scss'));
+
+        // Boost files are kept when Classic has none of its own.
+        $this->assertEquals('/boostbackground.jpg', get_config('theme_boost', 'backgroundimage'));
+        $files = $fs->get_area_files($systemcontext->id, 'theme_boost', 'backgroundimage', 0, 'id', false);
+        $this->assertCount(1, $files);
+        $this->assertEquals('boostbackground.jpg', reset($files)->get_filename());
+    }
+
+    /**
+     * Test migration helper no-op behaviour when Classic is not the active site theme.
+     */
+    public function test_upgrade_migrate_classic_theme_to_boost_non_classic_theme(): void {
+        $this->resetAfterTest();
+
+        $systemcontext = context_system::instance();
+        $fs = get_file_storage();
+
+        set_config('theme', 'boost');
+        set_config('preset', 'classicpreset.scss', 'theme_classic');
+
+        set_config('preset', 'existingboost.scss', 'theme_boost');
+        $fs->create_file_from_string([
+            'contextid' => $systemcontext->id,
+            'component' => 'theme_classic',
+            'filearea' => 'preset',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'classicpreset.scss',
+        ], 'classic preset');
+        $fs->create_file_from_string([
+            'contextid' => $systemcontext->id,
+            'component' => 'theme_boost',
+            'filearea' => 'preset',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'existingboost.scss',
+        ], 'boost preset');
+
+        upgrade_migrate_classic_theme_to_boost();
+
+        $this->assertEquals('existingboost.scss', get_config('theme_boost', 'preset'));
+
+        $files = $fs->get_area_files($systemcontext->id, 'theme_boost', 'preset', 0, 'id', false);
+        $this->assertCount(1, $files);
+        $this->assertEquals('existingboost.scss', reset($files)->get_filename());
+    }
+
+    /**
      * Test that courses affected by MDL-88407 are frozen during upgrade.
-     *
-     * @covers ::upgrade_penalty_calculation_freeze
      */
     public function test_upgrade_penalty_calculation_freeze(): void {
         global $CFG;
@@ -1997,8 +2155,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
      *
      * This covers the case where comparing rawgrade with the authoritative mark alone would miss a
      * legacy-corrupted grade.
-     *
-     * @covers ::upgrade_penalty_calculation_freeze
      */
     public function test_upgrade_penalty_calculation_freeze_assignment_precision(): void {
         global $CFG;
@@ -2062,8 +2218,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
      *
      * Overridden grades are skipped by grade_item::regrade_final_grades(), so a mismatch between
      * finalgrade and the fixed calculation cannot cause a grade change during regrading.
-     *
-     * @covers ::upgrade_penalty_calculation_freeze
      */
     public function test_upgrade_penalty_calculation_freeze_skips_overridden_grade(): void {
         global $CFG, $DB;
@@ -2095,8 +2249,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
     /**
      * Test that a scale-graded Assignment item does not cause its course to be frozen, even when its
      * stored rawgrade differs from the authoritative mark.
-     *
-     * @covers ::upgrade_penalty_calculation_freeze
      */
     public function test_upgrade_penalty_calculation_freeze_skips_non_value_gradetype(): void {
         global $CFG, $DB;
@@ -2128,8 +2280,6 @@ calendar,core_calendar|/calendar/view.php?view=month',
     /**
      * Test that an Assignment grade with no finalgrade yet does not cause its course to be frozen,
      * even when its stored rawgrade differs from the authoritative mark.
-     *
-     * @covers ::upgrade_penalty_calculation_freeze
      */
     public function test_upgrade_penalty_calculation_freeze_skips_null_finalgrade(): void {
         global $CFG, $DB;

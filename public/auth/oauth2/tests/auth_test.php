@@ -23,15 +23,16 @@ namespace auth_oauth2;
  * @category   test
  * @copyright  2019 Shamim Rezaie
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers \auth_oauth2\auth
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\auth_oauth2\auth::class)]
+#[\PHPUnit\Framework\Attributes\CoversFunction('complete_login')]
 final class auth_test extends \advanced_testcase {
 
     public function test_get_password_change_info(): void {
         $this->resetAfterTest();
 
         $user = $this->getDataGenerator()->create_user(['auth' => 'oauth2']);
-        $auth = get_auth_plugin($user->auth);
+        $auth = \core\di::get(\core\authentication::class)->get_plugin($user->auth);
         $info = $auth->get_password_change_info($user);
 
         $this->assertEqualsCanonicalizing(['subject', 'message'], array_keys($info));
@@ -42,7 +43,6 @@ final class auth_test extends \advanced_testcase {
 
     /**
      * Test complete_login for oauth2.
-     * @covers ::complete_login
      */
     public function test_oauth2_complete_login(): void {
         global $CFG;
@@ -62,7 +62,7 @@ final class auth_test extends \advanced_testcase {
         $info['auth'] = 'oauth2';
 
         $user = \auth_oauth2\api::create_new_confirmed_account($info, $issuer);
-        $auth = get_auth_plugin($user->auth);
+        $auth = \core\di::get(\core\authentication::class)->get_plugin($user->auth);
 
         // Set up mock data.
         $client = $this->createMock(\core\oauth2\client::class);
@@ -96,7 +96,7 @@ final class auth_test extends \advanced_testcase {
     public function test_email_greetings(): void {
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user(['auth' => 'oauth2']);
-        $auth = get_auth_plugin($user->auth);
+        $auth = \core\di::get(\core\authentication::class)->get_plugin($user->auth);
         $info = $auth->get_password_change_info($user);
         $this->assertStringContainsString('Hi ' . $user->firstname, quoted_printable_decode($info['message']));
     }

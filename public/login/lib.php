@@ -129,9 +129,12 @@ function core_login_process_password_reset($username, $email) {
     if ($user and !empty($user->confirmed)) {
         $systemcontext = context_system::instance();
 
-        $userauth = get_auth_plugin($user->auth);
-        if (!$userauth->can_reset_password() or !is_enabled_auth($user->auth)
-          or !has_capability('moodle/user:changeownpassword', $systemcontext, $user->id)) {
+        $userauth = \core\di::get(\core\authentication::class)->get_plugin($user->auth);
+        if (
+            !$userauth->can_reset_password()
+            || !\core\di::get(\core\authentication::class)->is_enabled($user->auth)
+            || !has_capability('moodle/user:changeownpassword', $systemcontext, $user->id)
+        ) {
             if (send_password_change_info($user)) {
                 $pwresetstatus = PWRESET_STATUS_OTHEREMAILSENT;
             } else {
@@ -146,9 +149,8 @@ function core_login_process_password_reset($username, $email) {
                 $resetrecord = core_login_generate_password_reset($user);
                 $sendemail = true;
             } else if ($resetinprogress->timerequested < (time() - $CFG->pwresettime)) {
-                // Preexisting, but expired request - delete old record & create new one.
+                // Preexisting, but expired request.
                 // Uncommon case - expired requests are cleaned up by cron.
-                $DB->delete_records('user_password_resets', array('id' => $resetinprogress->id));
                 $resetrecord = core_login_generate_password_reset($user);
                 $sendemail = true;
             } else if (empty($resetinprogress->timererequested)) {
@@ -250,7 +252,10 @@ function core_login_process_password_set($token) {
         die; // Never reached.
     }
 
-    if ($user->auth === 'nologin' or !is_enabled_auth($user->auth)) {
+    if (
+        $user->auth === 'nologin'
+        || !\core\di::get(\core\authentication::class)->is_enabled($user->auth)
+    ) {
         // Bad luck - user is not able to login, do not let them set password.
         echo $OUTPUT->header();
         throw new \moodle_exception('forgotteninvalidurl');
@@ -282,11 +287,11 @@ function core_login_process_password_set($token) {
         // User has submitted form.
         // Delete this token so it can't be used again.
         $DB->delete_records('user_password_resets', array('id' => $user->tokenid));
-        $userauth = get_auth_plugin($user->auth);
+        $userauth = \core\di::get(\core\authentication::class)->get_plugin($user->auth);
         if (!$userauth->user_update_password($user, $data->password)) {
             throw new \moodle_exception('errorpasswordupdate', 'auth');
         }
-        user_add_password_history($user->id, $data->password);
+        \core\user::add_password_history($user->id, $data->password);
         if (!empty($CFG->passwordchangelogout) || !empty($data->logoutothersessions)) {
             \core\session\manager::destroy_user_sessions($user->id, session_id());
         }
@@ -315,11 +320,19 @@ function core_login_process_password_set($token) {
 }
 
 /** Create a new record in the database to track a new password set request for user.
+ *
+ * Any existing outstanding password reset tokens for this user are removed first, so only the
+ * newly generated token remains valid.
+ *
  * @param object $user the user record, the requester would like a new password set for.
  * @return record created.
  */
 function core_login_generate_password_reset ($user) {
     global $DB;
+
+    // Remove any existing tokens for this user, as they are being superseded by the new one.
+    $DB->delete_records('user_password_resets', ['userid' => $user->id]);
+
     $resetrecord = new stdClass();
     $resetrecord->timerequested = time();
     $resetrecord->userid = $user->id;

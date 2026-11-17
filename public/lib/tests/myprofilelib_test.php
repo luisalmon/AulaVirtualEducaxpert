@@ -23,6 +23,7 @@ namespace core;
  * @copyright  2015 onwards Ankit agarwal <ankit.agrr@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later.
  */
+#[\PHPUnit\Framework\Attributes\CoversFunction('core_myprofile_navigation')]
 final class myprofilelib_test extends \advanced_testcase {
 
     /**
@@ -243,9 +244,8 @@ final class myprofilelib_test extends \advanced_testcase {
      * @param string $usertimezone Timezone identifier or '99' (Use server default)
      * @param string|null $expectresult
      * @return bool
-     *
-     * @dataProvider core_myprofile_navigation_contact_timezone_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('core_myprofile_navigation_contact_timezone_provider')]
     public function test_core_myprofile_navigation_contact_timezone(string $hiddenuserfields, string $forcetimezone,
             string $usertimezone, ?string $expectresult = null): void {
 
@@ -304,5 +304,39 @@ final class myprofilelib_test extends \advanced_testcase {
         $this->assertArrayNotHasKey('firstaccess', $nodes->getValue($this->tree));
         $this->assertArrayNotHasKey('lastaccess', $nodes->getValue($this->tree));
         $this->assertArrayNotHasKey('lastip', $nodes->getValue($this->tree));
+    }
+
+    /**
+     * Tests the Tags link is present in the profile navigation when tags are enabled.
+     */
+    public function test_core_myprofile_navigation_tags_link_enabled(): void {
+        set_config('usetags', 1);
+        $this->setUser($this->user);
+        $iscurrentuser = true;
+
+        core_myprofile_navigation($this->tree, $this->user, $iscurrentuser, null);
+        $reflector = new \ReflectionObject($this->tree);
+        $nodes = $reflector->getProperty('nodes');
+        $allnodes = $nodes->getValue($this->tree);
+        $this->assertArrayHasKey('tags', $allnodes);
+
+        $tagsnode = $allnodes['tags'];
+        $this->assertEquals('miscellaneous', $tagsnode->parentcat);
+        $this->assertNotNull($tagsnode->url);
+        $this->assertStringContainsString('/tag/search.php', $tagsnode->url->out(false));
+    }
+
+    /**
+     * Tests the Tags link is not present in the profile navigation when tags are disabled.
+     */
+    public function test_core_myprofile_navigation_tags_link_disabled(): void {
+        set_config('usetags', 0);
+        $this->setUser($this->user);
+        $iscurrentuser = true;
+
+        core_myprofile_navigation($this->tree, $this->user, $iscurrentuser, null);
+        $reflector = new \ReflectionObject($this->tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayNotHasKey('tags', $nodes->getValue($this->tree));
     }
 }

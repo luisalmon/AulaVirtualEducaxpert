@@ -24,9 +24,9 @@ use advanced_testcase;
  * @package   mod_bigbluebuttonbn
  * @copyright 2023 onwards, Blindside Networks Inc
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
- * @covers \mod_bigbluebuttonbn\task\base_send_notification
- * @coversDefaultClass \mod_bigbluebuttonbn\task\base_send_notification
  */
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_bigbluebuttonbn\task\base_send_notification::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\mod_bigbluebuttonbn\task\base_send_notification::class)]
 final class base_send_notification_test extends advanced_testcase {
 
     /**
@@ -35,15 +35,9 @@ final class base_send_notification_test extends advanced_testcase {
      * @return base_send_notification
      */
     private function get_mock(): base_send_notification {
-        return $this->getMockForAbstractClass(
-            base_send_notification::class,
-            [],
-            '',
-            true,
-            true,
-            true,
-            []
-        );
+        return $this->getMockBuilder(base_send_notification::class)
+            ->onlyMethods(['get_html_message', 'get_notification_type', 'get_small_message', 'get_subject'])
+            ->getMock();
     }
 
     /**

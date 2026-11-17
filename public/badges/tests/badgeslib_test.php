@@ -27,6 +27,15 @@ use core\task\manager;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @author     Yuliya Bozhko <yuliya.bozhko@totaralms.com>
  */
+#[\PHPUnit\Framework\Attributes\CoversFunction('badge_message_from_template')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\core_badges\badge::class, 'review_all_criteria')]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\core_badges\badge::class, 'save_alignment')]
+#[\PHPUnit\Framework\Attributes\CoversClass(\award_criteria_cohort::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\award_criteria_courseset::class)]
+#[\PHPUnit\Framework\Attributes\CoversMethod(\award_criteria_courseset::class, 'review')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('core_badges_myprofile_navigation')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('badges_change_sortorder_backpacks')]
+#[\PHPUnit\Framework\Attributes\CoversFunction('badge_get_tagged_badges')]
 final class badgeslib_test extends badges_testcase {
     protected $badgeid;
     protected $course;
@@ -379,17 +388,30 @@ final class badgeslib_test extends badges_testcase {
         );
     }
 
-    /**
-     * @dataProvider data_for_message_from_template
-     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('data_for_message_from_template')]
     public function test_badge_message_from_template($message, $params, $result): void {
         $this->assertEquals(badge_message_from_template($message, $params), $result);
     }
 
     /**
+     * Test user specific variables are interpolated in badge message from template
+     */
+    public function test_badge_message_from_template_with_user(): void {
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user();
+
+        $result = badge_message_from_template(
+            'Hi %firstname%, %middlename%! You successfully completed "%badgename%"',
+            ['badgename' => 'Test badge'],
+            $user,
+        );
+
+        $this->assertEquals("Hi {$user->firstname}, {$user->middlename}! You successfully completed \"Test badge\"", $result);
+    }
+
+    /**
      * Test for working around the 61 tables join limit of mysql in award_criteria_activity in combination with the scheduled task.
-     *
-     * @covers \core_badges\badge::review_all_criteria
      */
     public function test_badge_activity_criteria_with_a_huge_number_of_coursemodules(): void {
         global $CFG;
@@ -568,7 +590,7 @@ final class badgeslib_test extends badges_testcase {
         $this->user->department = 'sillywalks';
         $sink = $this->redirectEmails();
         profile_save_data((object)array('id' => $this->user->id, 'profile_field_newfield' => 'X'));
-        user_update_user($this->user, false);
+        \core\user::update_user($this->user, false);
         $this->assertCount(1, $sink->get_messages());
         $sink->close();
         // Check if badge is awarded.
@@ -578,8 +600,6 @@ final class badgeslib_test extends badges_testcase {
 
     /**
      * Test badges observer when cohort_member_added event is fired and user required to belong to any cohort.
-     *
-     * @covers \award_criteria_cohort
      */
     public function test_badges_observer_any_cohort_criteria_review(): void {
         global $CFG;
@@ -621,7 +641,6 @@ final class badgeslib_test extends badges_testcase {
 
     /**
      * Test badges observer when user_updated event is fired.
-     * @covers \award_criteria_courseset
      */
     public function test_badges_observer_courseset_criteria_review(): void {
         $this->preventResetByRollback(); // Messaging is not compatible with transactions.
@@ -662,7 +681,6 @@ final class badgeslib_test extends badges_testcase {
 
     /**
      * Test the criteria review method for courseset
-     * @covers \award_criteria_courseset::review
      */
     public function test_badges_courseset_criteria_review_empty_courseset(): void {
         $this->preventResetByRollback(); // Messaging is not compatible with transactions.
@@ -681,8 +699,6 @@ final class badgeslib_test extends badges_testcase {
 
     /**
      * Test badges observer when cohort_member_added event is fired and user required to belong to multiple (all) cohorts.
-     *
-     * @covers \award_criteria_cohort
      */
     public function test_badges_observer_all_cohort_criteria_review(): void {
         global $CFG;
@@ -823,6 +839,153 @@ final class badgeslib_test extends badges_testcase {
     }
 
     /**
+     * Tests that a non-manager sees the site badges link once an active site badge exists.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_shown_for_nonmanager_with_active_badge(): void {
+        global $DB;
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setUser($this->user);
+
+        // Activate the site badge so it appears to non-managers.
+        $DB->set_field('badge', 'status', BADGE_STATUS_ACTIVE, ['id' => $this->badgeid]);
+
+        set_config('enablebadges', true);
+
+        core_badges_myprofile_navigation($tree, $this->user, false, null);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
+     * Tests that a non-manager does not see the site badges link when no site badges are active.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_hidden_for_nonmanager_with_inactive_badge(): void {
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setUser($this->user);
+
+        // The default site badge fixture has BADGE_STATUS_INACTIVE — no active site badges.
+        set_config('enablebadges', true);
+
+        core_badges_myprofile_navigation($tree, $this->user, false, null);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayNotHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
+     * Tests that a non-manager does not see the site badges link when only archived site badges exist.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_hidden_for_nonmanager_with_archived_badge(): void {
+        global $DB;
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setUser($this->user);
+
+        // Archive the site badge.
+        $DB->set_field('badge', 'status', BADGE_STATUS_ARCHIVED, ['id' => $this->badgeid]);
+
+        set_config('enablebadges', true);
+
+        core_badges_myprofile_navigation($tree, $this->user, false, null);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayNotHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
+     * Tests that a non-manager does not see the site badges link without the viewbadges capability,
+     * even when an active site badge exists.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_hidden_without_viewbadges(): void {
+        global $DB;
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setUser($this->user);
+
+        $DB->set_field('badge', 'status', BADGE_STATUS_ACTIVE, ['id' => $this->badgeid]);
+        set_config('enablebadges', true);
+
+        $userroleid = $DB->get_field('role', 'id', ['shortname' => 'user'], MUST_EXIST);
+        assign_capability('moodle/badges:viewbadges', CAP_PROHIBIT, $userroleid, \context_system::instance()->id, true);
+        accesslib_clear_all_caches_for_unit_testing();
+
+        core_badges_myprofile_navigation($tree, $this->user, false, null);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayNotHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
+     * Tests that a badge manager sees the site badges link even when the only site badge is inactive.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_shown_for_manager_with_inactive_badge(): void {
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setAdminUser();
+
+        // The default site badge fixture has BADGE_STATUS_INACTIVE.
+        set_config('enablebadges', true);
+
+        core_badges_myprofile_navigation($tree, $this->user, false, null);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
+     * Tests that a badge manager sees the site badges link even when the only site badge is archived.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_shown_for_manager_with_archived_badge(): void {
+        global $DB;
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setAdminUser();
+
+        $DB->set_field('badge', 'status', BADGE_STATUS_ARCHIVED, ['id' => $this->badgeid]);
+        set_config('enablebadges', true);
+
+        core_badges_myprofile_navigation($tree, $this->user, false, null);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
+     * Tests that a badge manager does not see the site badges link when no site badges exist at all.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_hidden_for_manager_with_no_badges(): void {
+        global $DB;
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setAdminUser();
+
+        $DB->delete_records('badge', ['id' => $this->badgeid, 'type' => BADGE_TYPE_SITE]);
+        set_config('enablebadges', true);
+
+        core_badges_myprofile_navigation($tree, $this->user, false, null);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayNotHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
+     * Tests that the site badges link is not shown on a course profile page.
+     */
+    public function test_core_badges_myprofile_navigation_sitebadges_link_not_on_course_profile(): void {
+        global $DB;
+        $tree = new \core_user\output\myprofile\tree();
+        $this->setAdminUser();
+
+        // Activate the site badge.
+        $DB->set_field('badge', 'status', BADGE_STATUS_ACTIVE, ['id' => $this->badgeid]);
+
+        set_config('enablebadges', true);
+        set_config('badges_allowcoursebadges', true);
+
+        // Pass a course — site badges link must not appear on a course profile.
+        core_badges_myprofile_navigation($tree, $this->user, false, $this->course);
+        $reflector = new ReflectionObject($tree);
+        $nodes = $reflector->getProperty('nodes');
+        $this->assertArrayNotHasKey('sitebadges', $nodes->getValue($tree));
+    }
+
+    /**
      * Test insert and update endorsement with a site badge.
      */
     public function test_badge_endorsement(): void {
@@ -920,6 +1083,34 @@ final class badgeslib_test extends badges_testcase {
     }
 
     /**
+     * Test save_alignment() only updates alignments of the same badge.
+     */
+    public function test_save_alignment_scoped_to_badge(): void {
+        global $DB;
+
+        $coursebadge = new badge($this->coursebadge);
+        $coursealignments = $coursebadge->get_alignments();
+        $this->assertCount(1, $coursealignments);
+        $coursealignment = reset($coursealignments);
+
+        $sitebadge = new badge($this->badgeid);
+        $alignment = new stdClass();
+        $alignment->badgeid = $sitebadge->id;
+        $alignment->targetname = 'Site badge alignment';
+        $alignment->targeturl = 'https://example.com/site';
+        $newid = $sitebadge->save_alignment($alignment, $coursealignment->id);
+
+        // A new alignment is created for the site badge, the course badge alignment is unchanged.
+        $this->assertNotEquals($coursealignment->id, $newid);
+        $this->assertEquals($coursealignment, $DB->get_record('badge_alignment', ['id' => $coursealignment->id]));
+        $this->assertCount(1, $coursebadge->get_alignments());
+
+        $sitealignments = $sitebadge->get_alignments();
+        $this->assertCount(1, $sitealignments);
+        $this->assertEquals('Site badge alignment', $sitealignments[$newid]->targetname);
+    }
+
+    /**
      * Test badges_delete_site_backpack().
      *
      */
@@ -976,11 +1167,11 @@ final class badgeslib_test extends badges_testcase {
     /**
      * Test to validate badges_save_backpack_credentials.
      *
-     * @dataProvider save_backpack_credentials_provider
      * @param  bool $addbackpack True if backpack data has to be created; false otherwise (empty data will be used then).
      * @param  string|null  $mail  Backpack mail address.
      * @param  string|null  $password  Backpack password.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('save_backpack_credentials_provider')]
     public function test_save_backpack_credentials(bool $addbackpack = true, ?string $mail = null, ?string $password = null): void {
         global $DB;
 
@@ -1072,11 +1263,11 @@ final class badgeslib_test extends badges_testcase {
     /**
      * Test badges_save_external_backpack.
      *
-     * @dataProvider badges_save_external_backpack_provider
      * @param  array $data  Backpack data to save.
      * @param  bool $adduser True if a real user has to be used for creating the backpack; false otherwise.
      * @param  bool $duplicates True if duplicates has to be tested too; false otherwise.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('badges_save_external_backpack_provider')]
     public function test_badges_save_external_backpack(array $data, bool $adduser, bool $duplicates): void {
         global $DB;
 
@@ -1186,8 +1377,8 @@ final class badgeslib_test extends badges_testcase {
      *
      * @param boolean $isadmin
      * @param boolean $updatetest
-     * @dataProvider badges_create_site_backpack_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('badges_create_site_backpack_provider')]
     public function test_badges_create_site_backpack($isadmin, $updatetest): void {
         global $DB;
         $this->resetAfterTest();
@@ -1362,8 +1553,8 @@ final class badgeslib_test extends badges_testcase {
      * Test the badges_get_site_primary_backpack function
      *
      * @param boolean $withauth Testing with authentication or not.
-     * @dataProvider badges_get_site_primary_backpack_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('badges_get_site_primary_backpack_provider')]
     public function test_badges_get_site_primary_backpack($withauth): void {
         $data = [
             'apiversion' => '2',
@@ -1415,13 +1606,12 @@ final class badgeslib_test extends badges_testcase {
     /**
      * Test badges_change_sortorder_backpacks().
      *
-     * @dataProvider badges_change_sortorder_backpacks_provider
-     * @covers ::badges_change_sortorder_backpacks
      *
      * @param int $backpacktomove Backpack index to move (from 0 to 5).
      * @param int $direction Direction to move the backpack.
      * @param int|null $expectedsortorder Expected sortorder or null if an exception is expected.
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('badges_change_sortorder_backpacks_provider')]
     public function test_badges_change_sortorder_backpacks(int $backpacktomove, int $direction, ?int $expectedsortorder): void {
         global $DB;
 
@@ -1496,8 +1686,8 @@ final class badgeslib_test extends badges_testcase {
      *
      * @param mixed $type Type corresponding to the badge entites
      * @param string $expected Expected string result
-     * @dataProvider badgr_open_url_generator
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('badgr_open_url_generator')]
     public function test_badges_generate_badgr_open_url($type, $expected): void {
         $data = [
             'apiversion' => '2',
@@ -1538,9 +1728,8 @@ final class badgeslib_test extends badges_testcase {
      * @param int $externalid The external / remote ref to the mapping
      * @param mixed $expected The expected result from the function
      * @param string|null $field The field we are passing to the function. Null if we don't want to pass anything.ss
-     *
-     * @dataProvider badges_external_get_mapping_provider
      */
+    #[\PHPUnit\Framework\Attributes\DataProvider('badges_external_get_mapping_provider')]
     public function test_badges_external_get_mapping($internalid, $externalid, $expected, $field = null): void {
         $data = [
             'apiversion' => '2',
@@ -1599,8 +1788,6 @@ final class badgeslib_test extends badges_testcase {
 
     /**
      * Testing function test_badge_get_tagged_badges - search tagged badges
-     *
-     * @covers ::badge_get_tagged_badges
      */
     public function test_badge_get_tagged_badges(): void {
         $this->resetAfterTest();

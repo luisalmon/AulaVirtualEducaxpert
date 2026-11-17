@@ -18,10 +18,11 @@
  * Handles viewing the certificates for a certain user.
  *
  * @package    mod_customcert
- * @copyright  2016 Mark Nelson <markn@moodle.com>
+ * @copyright  2016 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use mod_customcert\helper;
 use mod_customcert\local\pagination;
 use mod_customcert\my_certificates_table;
 use mod_customcert\service\certificate_repository;
@@ -45,11 +46,12 @@ if ($courseid) {
     require_login();
 }
 
+helper::require_view_user_certificates($userid);
+
 if ($downloadcert) {
     $certificateid = required_param('certificateid', PARAM_INT);
     $certrepo = new certificate_repository();
     $customcert = $certrepo->get_by_id_or_fail($certificateid);
-    // Check there exists an issued certificate for this user.
     $issuerepo = new issue_repository();
     if (!$issuerepo->find_by_user_certificate((int)$customcert->id, $userid)) {
         throw new moodle_exception('You have not been issued a certificate');
@@ -63,18 +65,12 @@ $pageurl = $url = new moodle_url('/mod/customcert/my_certificates.php', ['userid
 // Check that we have a valid user.
 $user = core_user::get_user($userid, '*', MUST_EXIST);
 
-// If we are viewing certificates that are not for the currently logged in user then do a capability check.
-if (($userid != $USER->id) && !has_capability('mod/customcert:viewallcertificates', context_system::instance())) {
-    throw new moodle_exception('You are not allowed to view these certificates');
-}
-
 $PAGE->set_url($pageurl);
 $PAGE->set_context(context_user::instance($userid));
 $PAGE->set_title(get_string('mycertificates', 'customcert'));
 $PAGE->set_pagelayout('standard');
 $PAGE->navigation->extend_for_user($user);
 
-// Check if we requested to download a certificate.
 if ($downloadcert) {
     $template = template::from_record((new template_repository())->get_by_id_or_fail((int)$customcert->templateid));
     $pdfservice = pdf_generation_service::create();
@@ -90,7 +86,6 @@ if ($table->is_downloading()) {
     exit();
 }
 
-// Additional page setup.
 $PAGE->navbar->add(get_string('profile'), new moodle_url('/user/profile.php', ['id' => $userid]));
 $PAGE->navbar->add(get_string('mycertificates', 'customcert'));
 

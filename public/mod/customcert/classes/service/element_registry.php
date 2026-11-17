@@ -28,6 +28,7 @@ namespace mod_customcert\service;
 
 use coding_exception;
 use moodle_exception;
+use mod_customcert\element as legacy_base;
 use mod_customcert\element\form_element_interface;
 use mod_customcert\element\renderable_element_interface;
 
@@ -41,24 +42,31 @@ final class element_registry {
     /**
      * Register a class for a given element type key.
      *
+     * Accepted classes:
+     * - Native v2 elements implementing form_element_interface and renderable_element_interface
+     * - Supported historical subclasses of mod_customcert\element (wrapped by the factory)
+     *
      * @param string $type
-     * @param string $class Must implement form_element_interface and renderable_element_interface
-     *                       (or extend mod_customcert\element, which does both)
+     * @param string $class
      * @return void
      */
     public function register(string $type, string $class): void {
         if (!class_exists($class)) {
             throw new coding_exception("Cannot register element type '{$type}': class '{$class}' does not exist.");
         }
-        if (
-            !is_a($class, form_element_interface::class, true) ||
-            !is_a($class, renderable_element_interface::class, true)
-        ) {
+
+        $isnative = is_a($class, form_element_interface::class, true)
+            && is_a($class, renderable_element_interface::class, true);
+        $islegacy = is_a($class, legacy_base::class, true);
+
+        if (!$isnative && !$islegacy) {
             throw new coding_exception(
-                "Cannot register element type '{$type}': '{$class}' must implement"
-                . ' form_element_interface and renderable_element_interface.'
+                "Cannot register element type '{$type}': '{$class}' must implement "
+                . 'form_element_interface and renderable_element_interface, '
+                . 'or extend mod_customcert\element.'
             );
         }
+
         $this->map[$type] = $class;
     }
 

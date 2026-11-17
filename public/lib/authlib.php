@@ -710,7 +710,7 @@ class auth_plugin_base {
             }
 
             if ($needsupdate) {
-                user_update_user($newuser, false, $triggerevent);
+                \core\user::update_user($newuser, false, $triggerevent);
                 profile_save_custom_fields($newuser->id, $newprofilefields);
                 return $DB->get_record('user', array('id' => $userid, 'deleted' => 0));
             }
@@ -733,8 +733,9 @@ class auth_plugin_base {
         global $SESSION;
 
         $identityproviders = [];
+        $authentication = \core\di::get(\core\authentication::class);
         foreach ($authsequence as $authname) {
-            $authplugin = get_auth_plugin($authname);
+            $authplugin = $authentication->get_plugin($authname);
             $wantsurl = (isset($SESSION->wantsurl)) ? $SESSION->wantsurl : '';
             $identityproviders = array_merge($identityproviders, $authplugin->loginpage_idp_list($wantsurl));
         }
@@ -840,9 +841,10 @@ class auth_plugin_base {
      */
     public static function get_enabled_auth_plugin_classes(): array {
         $plugins = [];
-        $authsequence = get_enabled_auth_plugins();
+        $authentication = \core\di::get(\core\authentication::class);
+        $authsequence = $authentication->get_enabled_plugins();
         foreach ($authsequence as $authname) {
-            $plugins[] = get_auth_plugin($authname);
+            $plugins[] = $authentication->get_plugin($authname);
         }
         return $plugins;
     }
@@ -1102,7 +1104,7 @@ function login_unlock_account($user, bool $notify = false) {
  */
 function signup_captcha_enabled() {
     global $CFG;
-    $authplugin = get_auth_plugin($CFG->registerauth);
+    $authplugin = \core\di::get(\core\authentication::class)->get_plugin($CFG->registerauth);
     return !empty($CFG->recaptchapublickey) && !empty($CFG->recaptchaprivatekey) && $authplugin->is_captcha_enabled();
 }
 
@@ -1162,7 +1164,7 @@ function signup_validate_data($data, $files) {
     global $CFG, $DB;
 
     $errors = array();
-    $authplugin = get_auth_plugin($CFG->registerauth);
+    $authplugin = \core\di::get(\core\authentication::class)->get_plugin($CFG->registerauth);
 
     if ($DB->record_exists('user', array('username' => $data['username'], 'mnethostid' => $CFG->mnet_localhost_id))) {
         $errors['username'] = get_string('usernameexists');
@@ -1237,7 +1239,7 @@ function signup_validate_data($data, $files) {
     $tempuser->email = $data['email'];
 
     $errmsg = '';
-    if (!check_password_policy($data['password'], $errmsg, $tempuser)) {
+    if (!\core\di::get(\core\authentication\password::class)->check_policy($data['password'], $errmsg, $tempuser)) {
         $errors['password'] = $errmsg;
     }
 
@@ -1286,7 +1288,7 @@ function signup_get_user_confirmation_authplugin() {
     if (empty($CFG->registerauth)) {
         return false;
     }
-    $authplugin = get_auth_plugin($CFG->registerauth);
+    $authplugin = \core\di::get(\core\authentication::class)->get_plugin($CFG->registerauth);
 
     if (!$authplugin->can_confirm()) {
         return false;
@@ -1304,7 +1306,7 @@ function signup_is_enabled() {
     global $CFG;
 
     if (!empty($CFG->registerauth)) {
-        $authplugin = get_auth_plugin($CFG->registerauth);
+        $authplugin = \core\di::get(\core\authentication::class)->get_plugin($CFG->registerauth);
         if ($authplugin->can_signup()) {
             return $authplugin;
         }

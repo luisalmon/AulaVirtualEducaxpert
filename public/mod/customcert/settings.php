@@ -18,7 +18,7 @@
  * Creates a link to the upload form on the settings page.
  *
  * @package    mod_customcert
- * @copyright  2013 Mark Nelson <markn@moodle.com>
+ * @copyright  2013 Mark Nelson <mdjnelson@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -137,8 +137,8 @@ $settings->add(new admin_setting_configselect(
     get_string('codegenerationmethod_desc', 'customcert'),
     0, // Default option (0 = Upper/lower/digits random string method).
     [
-        0 => get_string('codegenerationmethod_upperlowerdigits', 'customcert'), // Upper/lower/digits random string.
-        1 => get_string('codegenerationmethod_digitshyphens', 'customcert'), // Digits with hyphens numeric code.
+        0 => get_string('codegenerationmethod_upperlowerdigits', 'customcert'),
+        1 => get_string('codegenerationmethod_digitshyphens', 'customcert'),
     ]
 ));
 

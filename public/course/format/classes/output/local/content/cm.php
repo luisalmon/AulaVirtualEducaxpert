@@ -206,7 +206,7 @@ class cm implements named_templatable, renderable {
         $data->afterlink = $this->mod->afterlink;
 
         $activitybadgedata = $this->mod->get_activitybadge($output);
-        if (!empty($activitybadgedata)) {
+        if (!empty($activitybadgedata->badgecontent)) {
             $data->activitybadge = $activitybadgedata;
         }
 
@@ -313,7 +313,6 @@ class cm implements named_templatable, renderable {
         if (!$this->format->show_editor($editcaps)) {
             return false;
         }
-        $returnsection = $this->format->get_sectionnum();
         // Edit actions.
         $controlmenu = new $this->controlmenuclass(
             $this->format,
@@ -325,7 +324,8 @@ class cm implements named_templatable, renderable {
 
         if (!$this->format->supports_components()) {
             // Add the legacy YUI move link.
-            $data->moveicon = course_get_cm_move($this->mod, $returnsection);
+            $returnoptions = $this->format->get_return_options($this->section);
+            $data->moveicon = course_get_cm_move($this->mod, $returnoptions);
         }
         return true;
     }

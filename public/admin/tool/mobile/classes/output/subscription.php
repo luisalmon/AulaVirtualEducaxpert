@@ -25,6 +25,8 @@
 
 namespace tool_mobile\output;
 
+use tool_mobile\api;
+
 /**
  * Subscription page.
  *
@@ -53,12 +55,104 @@ class subscription implements \renderable, \templatable {
     }
 
     /**
+     * Get the lines from a multiline setting, splitting on any line ending as the app does.
+     *
+     * @param string $config raw setting value
+     * @return string[] lines, not trimmed
+     */
+    private static function get_lines(string $config): array {
+        return preg_split('/\r\n|\r|\n/', $config);
+    }
+
+    /**
+     * Normalise a language code so that "pt_br" and "pt-br" are considered the same language.
+     *
+     * @param string $lang language code
+     * @return string normalised language code
+     */
+    private static function normalise_lang(string $lang): string {
+        return str_replace('_', '-', $lang);
+    }
+
+    /**
+     * Count the custom menu items as the app does, to be compared with the subscription limit.
+     *
+     * Each line follows the "label|url|type|lang" format and is ignored unless label, url and type are not empty.
+     * Lines with the same url and type (case insensitive) are translations of the same item.
+     *
+     * An item with at least one label not restricted to a language with "<lang>_only" is shown in every language.
+     * Otherwise, it is only shown in the languages of its labels. The count is the number of items shown in every
+     * language plus the highest number of language restricted items shown in a single language.
+     *
+     * @param string $menuitemsconfig raw setting value (one menu item per line)
+     * @return int number of custom menu items
+     */
+    private static function count_custom_menu_items(string $menuitemsconfig): int {
+        // Labels languages of each item, indexed by item identity.
+        $items = [];
+        foreach (self::get_lines($menuitemsconfig) as $line) {
+            [$label, $url, $type, $lang] = array_pad(array_map('trim', explode('|', $line)), 4, '');
+            if ($label === '' || $url === '' || $type === '') {
+                continue;
+            }
+            $items[$url . '|' . \core_text::strtolower($type)][] = \core_text::strtolower($lang);
+        }
+
+        $generic = 0;
+        $langonly = [];
+        foreach ($items as $langs) {
+            $onlylangs = [];
+            foreach ($langs as $lang) {
+                if (!str_ends_with($lang, '_only')) {
+                    // Shown in every language.
+                    $onlylangs = null;
+                    break;
+                }
+                $onlylangs[self::normalise_lang(substr($lang, 0, -strlen('_only')))] = true;
+            }
+
+            if ($onlylangs === null) {
+                $generic++;
+                continue;
+            }
+            foreach (array_keys($onlylangs) as $lang) {
+                $langonly[$lang] = ($langonly[$lang] ?? 0) + 1;
+            }
+        }
+
+        return $generic + ($langonly ? max($langonly) : 0);
+    }
+
+    /**
+     * Count the custom language strings as the app does, to be compared with the subscription limit.
+     *
+     * Each line follows the "id|string|lang" format and is ignored if it has less than 3 values. Duplicates are not
+     * removed. The limit applies per language, so the count is the highest number of strings in a single language.
+     *
+     * @param string $customlangstrings raw setting value (one language string per line)
+     * @return int number of custom language strings
+     */
+    private static function count_custom_lang_strings(string $customlangstrings): int {
+        $counts = [];
+        foreach (self::get_lines($customlangstrings) as $line) {
+            $values = explode('|', $line);
+            if (count($values) < 3) {
+                continue;
+            }
+            $lang = self::normalise_lang(trim($values[2]));
+            $counts[$lang] = ($counts[$lang] ?? 0) + 1;
+        }
+
+        return $counts ? max($counts) : 0;
+    }
+
+    /**
      * Exports the data.
      *
-     * @param \renderer_base $output
+     * @param \core\output\renderer_base $output
      * @return array with the subscription information
      */
-    public function export_for_template(\renderer_base $output): array {
+    public function export_for_template(\core\output\renderer_base $output): array {
         global $CFG, $USER;
 
         $ms = get_config('tool_mobile');    // Get mobile settings.
@@ -71,6 +165,7 @@ class subscription implements \renderable, \templatable {
             $datanosub['messagenosubscriptioninfo'][] = [
                 'message' => get_string('nosubsblocked', 'tool_mobile', $datanosub['appsportalurl']),
                 'title' => get_string('nosubswhyhappen', 'tool_mobile'),
+                'headinglevel' => 4,
                 'extraclasses' => 'mt-4 mb-0',
             ];
             return $datanosub;
@@ -126,7 +221,7 @@ class subscription implements \renderable, \templatable {
                         break;
                     case "missingcredentials":
                         $data['messagemissingcredentials'][] = [
-                            'message' => $msg['message'],
+                            'message' => get_string('statisticstemporarilyunavailable', 'tool_mobile'),
                             'extraclasses' => 'mt-4',
                         ];
                         break;
@@ -153,10 +248,16 @@ class subscription implements \renderable, \templatable {
         unset($data['messages']);
 
         // Derive plan flags for template logic-less checks.
-        if (!empty($data['subscription']['plan'])) {
-            $data['subscription']['isfree'] = ($data['subscription']['plan'] === 'free');
-            $data['subscription']['ispremium'] =
-                ($data['subscription']['plan'] === 'premium' || $data['subscription']['plan'] === 'bma');
+        $currentplan = api::get_normalized_plan($data, false);
+        $data['subscription']['isfree'] = ($currentplan === 'free');
+        $data['subscription']['ispremium'] = api::is_premium_or_bma_plan($data, false);
+        if (!$data['subscription']['ispremium']) {
+            if (api::has_matomo_additional_html()) {
+                $data['morecurrentsetup']['matomoinapp'] = 1;
+            }
+            if (!empty(get_config('core_admin', 'logo')) || !empty(get_config('core_admin', 'logocompact'))) {
+                $data['morecurrentsetup']['logoinapp'] = 1;
+            }
         }
 
         if (!empty($data['subscription']['expiretime'])) {
@@ -256,47 +357,13 @@ class subscription implements \renderable, \templatable {
                         break;
                     // Check menu items.
                     case 'custommenuitems':
-                        $custommenuitems = [];
-                        $els = rtrim($ms->custommenuitems, "\n");
-                        if (!empty($els)) {
-                            $custommenuitems = explode("\n", $els);
-                            // Get unique custom menu urls.
-                            $custommenuitems = array_flip(
-                                array_map(function ($val) {
-                                    return explode('|', $val)[1];
-                                }, $custommenuitems)
-                            );
-                        }
-
-                        $customusermenuitems = [];
-                        $els = rtrim($ms->customusermenuitems, "\n");
-                        if (!empty($els)) {
-                            $customusermenuitems = explode("\n", $els);
-                            // Get unique custom menu urls.
-                            $customusermenuitems = array_flip(
-                                array_map(function ($val) {
-                                    return explode('|', $val)[1];
-                                }, $customusermenuitems)
-                            );
-                        }
-
-                        $feature['status'] = count($custommenuitems) + count($customusermenuitems);
+                        $feature['status'] = self::count_custom_menu_items($ms->custommenuitems) +
+                            self::count_custom_menu_items($ms->customusermenuitems);
                         $feature['showstatus'] = 1;
                         break;
                     // Check language strings.
                     case 'customlanguagestrings':
-                        $langstrings = [];
-                        $els = rtrim($ms->customlangstrings, "\n");
-                        if (!empty($els)) {
-                            $langstrings = explode("\n", $els);
-                            // Get unique language string ids.
-                            $langstrings = array_flip(
-                                array_map(function($val) {
-                                    return explode('|', $val)[0];
-                                }, $langstrings)
-                            );
-                        }
-                        $feature['status'] = count($langstrings);
+                        $feature['status'] = self::count_custom_lang_strings($ms->customlangstrings);
                         $feature['showstatus'] = 1;
                         break;
                     // Check disabled features strings.

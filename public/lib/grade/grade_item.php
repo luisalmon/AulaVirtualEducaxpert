@@ -2223,8 +2223,16 @@ class grade_item extends grade_object {
      *
      * @param int $userid The graded user
      * @param float $deductedmark The mark deducted from final grade
+     * @deprecated since Moodle 5.3 - please do not use this function any more
+     * @todo MDL-88663 Final deprecation in Moodle 7.0.
      */
+    #[\core\attribute\deprecated(
+        reason: 'The penalty is now applied directly in penalty_manager via adjust_raw_grade(); there is no replacement',
+        since: '5.3',
+        mdl: 'MDL-88407'
+    )]
     public function update_deducted_mark(int $userid, float $deductedmark): void {
+        \core\deprecation::emit_deprecation([self::class, __FUNCTION__]);
         $grade = new grade_grade([
                 'itemid' => $this->id,
                 'userid' => $userid,

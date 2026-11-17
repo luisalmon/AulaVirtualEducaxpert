@@ -56,6 +56,11 @@ class manager {
     const ADHOC_TASK_FAILED_RETENTION = 4 * WEEKSECS;
 
     /**
+     * @var int The maximum fail delay in seconds between task retries (24 hours).
+     */
+    public const MAX_FAIL_DELAY = \DAYSECS;
+
+    /**
      * @var ?task_base $runningtask Used to tell what is the current running task in this process.
      */
     public static ?task_base $runningtask = null;
@@ -87,6 +92,31 @@ class manager {
         self::$miniqueue = [];
         self::$numtasks = 0;
         self::$mode = null;
+    }
+
+    /**
+     * Disable the cron runner.
+     */
+    public static function disable_cron(): void {
+        set_config('cron_enabled', 0);
+        self::clear_static_caches();
+    }
+
+    /**
+     * Enable the cron runner system.
+     */
+    public static function enable_cron(): void {
+        set_config('cron_enabled', 1);
+    }
+
+    /**
+     * Check whether the cron runner is enabled.
+     *
+     * @return bool
+     */
+    public static function is_cron_enabled(): bool {
+        // Note: Perform a non-strict comparison here because the values from get_config() can be strings.
+        return get_config('core', 'cron_enabled') == 1;
     }
 
     /**
@@ -182,7 +212,15 @@ class manager {
      *
      * @param adhoc_task $task
      * @return bool
+     * @deprecated since Moodle 5.3 Use get_queued_adhoc_task_record() directly instead.
      */
+    #[\core\attribute\deprecated(
+        replacement: 'manager::get_queued_adhoc_task_record()',
+        since: '5.3',
+        reason: 'This method is a simple wrapper that adds no value. Use get_queued_adhoc_task_record() directly.',
+        mdl: 'MDL-86422',
+        final: false
+    )]
     protected static function task_is_scheduled($task) {
         return false !== self::get_queued_adhoc_task_record($task, false);
     }
@@ -233,26 +271,33 @@ class manager {
     public static function reschedule_or_queue_adhoc_task(adhoc_task $task): void {
         global $DB;
 
-        if ($existingrecord = self::get_queued_adhoc_task_record($task, false)) {
-            // Only update the next run time if it is explicitly set on the task.
-            $nextruntime = $task->get_next_run_time();
-            if ($nextruntime && ($existingrecord->nextruntime != $nextruntime)) {
-                $DB->set_field('task_adhoc', 'nextruntime', $nextruntime, ['id' => $existingrecord->id]);
-            }
-        } else {
-            // There is nothing queued yet. Just queue as normal.
-            self::queue_adhoc_task($task);
+        $nextruntime = $task->get_next_run_time();
+        $taskid = self::queue_adhoc_task($task, true);
+        if ($taskid && $nextruntime) {
+            $DB->set_field('task_adhoc', 'nextruntime', $nextruntime, ['id' => $taskid]);
         }
     }
 
     /**
      * Queue an adhoc task to run in the background.
      *
+     *  This code block manages the scenario where:
+     *  1. A task with duplicate detection enabled ($checkforexisting = true) attempts to insert.
+     *  2. The insertion fails due to a database constraint violation.
+     *  3. If it's a duplicate and all retries have been exhausted, it restores and schedules the task.
+     *  4. If matching legacy tasks are found when $checkforexisting = true, the oldest one is assigned the identity
+     *     hash and the rest are left unchanged.
+     *
+     *  If task_adhoc.identityhash does not exist yet (for example, an upgrade step queues a task
+     *  before a later upgrade step has added the column), $checkforexisting is treated as false and
+     *  no identity hash is stored, so the task is queued without duplicate detection.
+     *
      * @param \core\task\adhoc_task $task - The new adhoc task information to store.
      * @param bool $checkforexisting - If set to true and the task with the same user, classname, component and customdata
-     *     is already scheduled (and has not giving up re-trying after failures) then it will not schedule a new task.
+     *     is already scheduled and has not exhausted retries then it will not schedule a new task.
      *     Can be used only for ASAP tasks, otherwise use {@see reschedule_or_queue_adhoc_task()}.
-     * @return boolean - True if the config was saved.
+     * @return int|false - Task ID of the newly inserted task or existing task (depending on $checkforexisting)
+     *     or false if the task component is deprecated or the task could not be queued due to DML error.
      */
     public static function queue_adhoc_task(adhoc_task $task, $checkforexisting = false) {
         global $DB;
@@ -269,7 +314,20 @@ class manager {
             \core_user::require_active_user(\core_user::get_user($userid, '*', MUST_EXIST), true, true);
         }
 
-        $record = self::record_from_adhoc_task($task);
+        // An upgrade step earlier in the same run may queue a task before a later step has added the
+        // task_adhoc.identityhash column. Duplicate detection and identity hashing both depend
+        // entirely on that column, so degrade to queueing a plain task without an identity hash when
+        // it is not yet present, rather than failing on an unknown column (see MDL-89876).
+        $hasidentityhash = self::task_adhoc_has_identityhash_column();
+        if (!$hasidentityhash) {
+            $checkforexisting = false;
+        }
+
+        $record = self::record_from_adhoc_task($task, $checkforexisting);
+        if (!$checkforexisting && $hasidentityhash) {
+            // Ensure intentionally duplicated tasks cannot be mistaken for legacy tasks.
+            $record->identityhash = bin2hex(random_bytes(20));
+        }
         // Schedule it immediately if nextruntime not explicitly set.
         if (!$task->get_next_run_time()) {
             $record->nextruntime = $clock->time() - 1;
@@ -280,15 +338,117 @@ class manager {
         // Set the time the task was created.
         $record->timecreated = $clock->time();
 
-        // Check if the same task is already scheduled.
-        if ($checkforexisting && self::task_is_scheduled($task)) {
-            return false;
+        // If existing tasks are found without an identity hash, update one of them. The others may have been queued
+        // intentionally without duplicate detection, so they must be left unchanged.
+        if ($checkforexisting) {
+            $DB->mark_tables_for_primary('task_adhoc');
+
+            // If a task with this identity hash already exists, return it, reviving it first if exhausted.
+            $existingtask = $DB->get_record('task_adhoc', ['identityhash' => $record->identityhash]);
+            if ($existingtask) {
+                self::revive_adhoc_task($task, $existingtask);
+                return (int)$existingtask->id;
+            }
+
+            // Fall back to getting all matching tasks (including duplicates).
+            $params = [$record->classname, $record->component, $record->customdata];
+            $sql = 'classname = ? AND component = ? AND ' .
+                $DB->sql_compare_text('customdata', \core_text::strlen($record->customdata) + 1) . ' = ?';
+
+            if ($record->userid) {
+                $params[] = $record->userid;
+                $sql .= " AND userid = ?";
+            } else {
+                $sql .= " AND userid IS NULL";
+            }
+            $sql .= " AND timestarted IS NULL";
+
+            $existingtasks = $DB->get_records_select('task_adhoc', $sql, $params, 'id ASC');
+
+            $legacytasks = array_filter(
+                $existingtasks,
+                fn(\stdClass $existingtask): bool => $existingtask->identityhash === null,
+            );
+
+            if (!empty($legacytasks)) {
+                // Update the first task (oldest by ID), leaving the other legacy tasks untouched.
+                $firsttaskid = array_key_first($legacytasks);
+                $tasktoretain = $legacytasks[$firsttaskid];
+
+                // Update the retained task with identity hash if it doesn't have one.
+                if ($tasktoretain->identityhash === null) {
+                    $DB->update_record('task_adhoc', [
+                        'id' => $tasktoretain->id,
+                        'identityhash' => $record->identityhash,
+                    ]);
+
+                    // Return the retained task ID.
+                    return $tasktoretain->id;
+                }
+            }
+
+            // A matching task queued without duplicate detection already satisfies this request.
+            if (!empty($existingtasks)) {
+                return (int)array_key_last($existingtasks);
+            }
         }
 
-        // Queue the task.
-        $result = $DB->insert_record('task_adhoc', $record);
-
+        try {
+            // Queue the task.
+            $result = $DB->insert_record('task_adhoc', $record);
+        } catch (\dml_write_exception $e) {
+            if (!$checkforexisting || empty($record->identityhash)) {
+                throw $e;
+            }
+            $existingtask = $DB->get_record('task_adhoc', ['identityhash' => $record->identityhash]);
+            if ($existingtask) {
+                self::revive_adhoc_task($task, $existingtask);
+                return (int)$existingtask->id;
+            }
+            throw $e;
+        }
         return $result;
+    }
+
+    /**
+     * Check whether task_adhoc.identityhash can be relied on yet.
+     *
+     * The column is added by the 2026081800.06 upgrade step, and $CFG->version tracks the
+     * upgrade savepoint reached so far (see {@see upgrade_main_savepoint()}), so a version below
+     * that savepoint means the column has not been added yet in this upgrade run (see MDL-89876).
+     *
+     * @todo MDL-89899 Remove this check, and the degraded queueing path in
+     *     {@see queue_adhoc_task()} it gates, once Moodle no longer supports upgrading from
+     *     before 5.3.
+     * @return bool
+     */
+    private static function task_adhoc_has_identityhash_column(): bool {
+        global $CFG;
+
+        return $CFG->version >= 2026081800.06;
+    }
+
+    /**
+     * Revive an existing queued adhoc task if it has exhausted its retries.
+     *
+     * @param adhoc_task $task
+     * @param \stdClass $record
+     */
+    private static function revive_adhoc_task(adhoc_task $task, \stdClass $record): void {
+        global $DB;
+
+        $clock = \core\di::get(\core\clock::class);
+
+        // If the existing task has given up, bring it back.
+        if ((int)$record->attemptsavailable === 0) {
+            $DB->update_record('task_adhoc', [
+                'id' => $record->id,
+                // Reset to default retry count and execute immediately.
+                'attemptsavailable' => $task->get_attempts_available(),
+                'nextruntime' => $clock->time() - 1,
+                'faildelay' => 0,
+            ]);
+        }
     }
 
     /**
@@ -344,10 +504,12 @@ class manager {
     /**
      * Utility method to create a DB record from an adhoc task.
      *
-     * @param \core\task\adhoc_task $task
-     * @return \stdClass
+     * @param \core\task\adhoc_task $task The adhoc task to be converted
+     * @param bool $needsidentityhash Whether to include the identity hash in the record
+     *
+     * @return \stdClass The record object representing the adhoc task
      */
-    public static function record_from_adhoc_task($task) {
+    public static function record_from_adhoc_task(adhoc_task $task, bool $needsidentityhash = false): \stdClass {
         $record = new \stdClass();
         $record->classname = self::get_canonical_class_name($task);
         $record->id = $task->get_id();
@@ -360,6 +522,9 @@ class manager {
         $record->hostname = $task->get_hostname();
         $record->pid = $task->get_pid();
         $record->attemptsavailable = $task->get_attempts_available();
+        if ($needsidentityhash) {
+            $record->identityhash = self::build_task_identity_hash($task);
+        }
 
         return $record;
     }
@@ -376,7 +541,7 @@ class manager {
         if (!class_exists($classname)) {
             throw new \moodle_exception('invalidtaskclassname', '', '', $record->classname);
         }
-        $task = new $classname();
+        $task = \core\di::make($classname);
         if (isset($record->nextruntime)) {
             $task->set_next_run_time($record->nextruntime);
         }
@@ -428,7 +593,7 @@ class manager {
             return false;
         }
         /** @var \core\task\scheduled_task $task */
-        $task = new $classname();
+        $task = \core\di::make($classname);
 
         if ($override) {
             // Update values with those defined in the config, if any are set.
@@ -1069,8 +1234,6 @@ class manager {
             }
 
             if ($lock = $cronlockfactory->get_lock(($record->classname), 0)) {
-                $classname = '\\' . $record->classname;
-
                 $task->set_lock($lock);
 
                 // See if the component is disabled.
@@ -1167,8 +1330,14 @@ class manager {
         if ($delay === null) {
             $retrycount = max(0, 12 - $task->get_attempts_available());
             // Cap exponent to 11 as this will exceed 24 hours.
-            $delay = min(86400, 60 * (int) pow(2, min($retrycount, 11)));
+            $delay = min(self::MAX_FAIL_DELAY, 60 * (int) pow(2, min($retrycount, 11)));
         }
+
+        // Subtract one from the available adhoc task attempts.
+        if ($task->get_attempts_available() > 0) {
+            $task->set_attempts_available($task->get_attempts_available() - 1);
+        }
+        $exhausted = ($task->get_attempts_available() === 0);
 
         // Schedule next adhoc task run.
         $task->set_next_run_time($now + $delay);
@@ -1179,26 +1348,41 @@ class manager {
             " (delay {$delay}s)"
         );
 
-        // Finalise log. Not failed.
-        logmanager::finalise_log();
+        if ($exhausted) {
+            mtrace(
+                "Adhoc task has run out of soft retry attempts and will be marked as failed: " .
+                get_class($task)
+            );
+        }
+
+        // Finalise log. Failed if the task has run out of attempts.
+        logmanager::finalise_log($exhausted);
 
         // Reset adhoc task metadata.
         $task->set_timestarted();
         $task->set_hostname();
         $task->set_pid();
 
-        // Subtract one from the available adhoc task attempts.
-        if ($task->get_attempts_available() > 0) {
-            $task->set_attempts_available($task->get_attempts_available() - 1);
+        if ($exhausted) {
+            // Mark the task as failed as the attempts are exhausted. This must result in the same end state as
+            // a task that failed for normal reasons, which is a fail delay capped at the maximum.
+            $task->set_fail_delay(self::MAX_FAIL_DELAY);
+
+            // Dispatch hook now that the task is exhausted and considered failed.
+            $hook = new \core\hook\task\after_failed_task_max_delay(
+                task: $task,
+            );
+            \core\di::get(\core\hook\manager::class)->dispatch($hook);
+        } else {
+            // This is not a failure, the task still has attempts left.
+            $task->set_fail_delay(0);
         }
 
         // Persist modified adhoc task to DB.
-        // Reset fail delay — this is not a failure.
-        $task->set_fail_delay(0);
         $record = self::record_from_adhoc_task($task);
         $DB->update_record('task_adhoc', $record);
 
-        // Release lock, prevent fail delay and adhoc task failure.
+        // Release locks.
         $task->release_concurrency_lock();
         $task->get_lock()->release();
         self::$runningtask = null;
@@ -1230,8 +1414,8 @@ class manager {
         }
 
         // Max of 24 hour delay.
-        if ($delay >= 86400) {
-            $delay = 86400;
+        if ($delay >= self::MAX_FAIL_DELAY) {
+            $delay = self::MAX_FAIL_DELAY;
 
             // Dispatch hook when max fail delay has reached.
             $hook = new \core\hook\task\after_failed_task_max_delay(
@@ -1343,8 +1527,8 @@ class manager {
         }
 
         // Max of 24 hour delay.
-        if ($delay >= 86400) {
-            $delay = 86400;
+        if ($delay >= self::MAX_FAIL_DELAY) {
+            $delay = self::MAX_FAIL_DELAY;
 
             // Dispatch hook when max fail delay has reached.
             $hook = new \core\hook\task\after_failed_task_max_delay(
@@ -1390,6 +1574,44 @@ class manager {
         $record->nextruntime = $task->get_next_scheduled_time();
         $record->faildelay = 0;
         $DB->update_record('task_scheduled', $record);
+    }
+
+    /**
+     * Sets the next run time for a scheduled task.
+     *
+     * @param scheduled_task $task Task to modify
+     * @param int $nextruntime timestamp
+     * @return bool Whether the next run time was updated
+     * @throws \dml_exception If there is a database error
+     * @since Moodle 5.3
+     */
+    public static function set_scheduled_task_nextruntime(scheduled_task $task, int $nextruntime): bool {
+        global $DB;
+
+        $classname = self::get_canonical_class_name($task);
+        $lockfactory = \core\lock\lock_config::get_lock_factory('cron');
+        $tasklock = $lockfactory->get_lock($classname, 0);
+        if (!$tasklock) {
+            return false;
+        }
+
+        try {
+            $record = $DB->get_record(
+                'task_scheduled',
+                ['classname' => $classname],
+                'id, timestarted',
+                MUST_EXIST,
+            );
+            if ($record->timestarted) {
+                return false;
+            }
+
+            $DB->set_field('task_scheduled', 'nextruntime', $nextruntime, ['id' => $record->id]);
+        } finally {
+            $tasklock->release();
+        }
+
+        return true;
     }
 
     /**
@@ -1706,6 +1928,11 @@ class manager {
             // Build the CLI command.
             $command = "{$phpbinary} {$scriptpath} {$taskarg}";
 
+            // Ensure subprocesses started from Behat web requests run against the Behat site.
+            if (defined('BEHAT_SITE_RUNNING') && BEHAT_SITE_RUNNING) {
+                $command = 'BEHAT_CLI=1 ' . $command;
+            }
+
             // Execute it.
             self::passthru_via_mtrace($command);
         }
@@ -1911,5 +2138,94 @@ class manager {
             select: 'attemptsavailable = 0 AND firststartingtime < :time',
             params: ['time' => $clock->time() - $difftime],
         );
+    }
+
+    /**
+     * Build a canonical task key suitable for use as a deduplication key.
+     *
+     * The key is currently a SHA-1 hash over the tuple:
+     *   (component, classname, userid, customdata)
+     *
+     * This is intended for adhoc tasks which want to avoid duplicate queue entries
+     * for the same logical work item.
+     *
+     * @param adhoc_task $task
+     * @return string
+     */
+    public static function build_task_identity_hash(adhoc_task $task): string {
+        $component = $task->get_component();
+        $classname = self::get_canonical_class_name($task);
+        $userid = $task->get_userid();
+
+        // Custom data is already stored as a JSON-encoded string in adhoc_task.
+        $customdatajson = $task->get_custom_data_as_string();
+        $canonicalcustomdata = self::canonicalise_json_string($customdatajson);
+
+        // If canonicalization changed the data, update the task so it can persist at DB level.
+        if (!empty($canonicalcustomdata) && $canonicalcustomdata !== $customdatajson) {
+            $task->set_custom_data_as_string($canonicalcustomdata);
+        }
+
+        // Delimiter-based concatenation is sufficient because the value is hashed.
+        // When the queued task has a userid, include it in the hash,
+        // otherwise, use a default userid (0) to ensure a distinct identity.
+        $payload = implode('|', [
+            $component,
+            $classname,
+            $userid ?? 0,
+            $canonicalcustomdata,
+        ]);
+
+        return sha1($payload);
+    }
+
+    /**
+     * Canonicalise a JSON string so that semantically identical data
+     * (e.g. different key orders) produce the same string.
+     *
+     * If the input is not valid JSON, it throws an exception.
+     *
+     * @param string|null $json
+     * @return string
+     * @throws \coding_exception
+     */
+    private static function canonicalise_json_string(?string $json): string {
+        if ($json === null || $json === '') {
+            return '';
+        }
+
+        $data = json_decode($json, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            // Fall back to the original string if json is not valid.
+            // Log with full context for debugging.
+            $errorcode = json_last_error();
+            $errormessage = json_last_error_msg();
+            throw new \coding_exception(
+                'Invalid JSON in adhoc task customdata. All custom data must be valid JSON.',
+                "JSON Error: {$errormessage} (code: {$errorcode}). Data: " . substr($json, 0, 200)
+            );
+        }
+
+        self::ksort_recursive($data);
+        return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Recursively sort array keys for consistent canonicalization.
+     *
+     * @param mixed $value
+     */
+    private static function ksort_recursive(&$value): void {
+        if (!is_array($value)) {
+            return;
+        }
+
+        // Sort keys to ensure a deterministic order.
+        ksort($value);
+        foreach ($value as &$child) {
+            if (is_array($child)) {
+                self::ksort_recursive($child);
+            }
+        }
     }
 }

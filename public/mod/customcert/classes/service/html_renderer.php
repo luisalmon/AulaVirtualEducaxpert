@@ -20,8 +20,7 @@
  * Implements {@see element_renderer} to render elements to HTML used by the
  * drag-and-drop designer UI. Elements that implement
  * {@see mod_customcert\element\renderable_element_interface} can delegate to
- * this renderer via their {@see render_html()} method. Legacy elements are
- * supported through the {@see mod_customcert\element\legacy_element_adapter}.
+ * this renderer via their {@see render_html()} method.
  *
  * @package    mod_customcert
  * @copyright  2025 Mark Nelson <mdjnelson@gmail.com>
@@ -46,7 +45,7 @@ final class html_renderer implements element_renderer {
     /**
      * Renders PDF.
      *
-     * No-op in the HTML renderer — PDF output is handled by pdf_renderer.
+     * Intentionally does nothing: PDF output is only produced by pdf_renderer.
      *
      * @param renderable_element_interface $element
      * @param pdf $pdf

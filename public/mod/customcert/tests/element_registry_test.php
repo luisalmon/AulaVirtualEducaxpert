@@ -27,11 +27,16 @@ declare(strict_types=1);
 
 namespace mod_customcert;
 
+defined('MOODLE_INTERNAL') || die();
+
+require_once(__DIR__ . '/fixtures/independent_native_element.php');
+
 use advanced_testcase;
-use mod_customcert\element\legacy_element_adapter;
 use mod_customcert\service\element_registry;
 use mod_customcert\service\element_factory;
 use mod_customcert\element\element_bootstrap;
+use mod_customcert\element\stylable_element_interface;
+use mod_customcert\tests\fixtures\independent_native_element;
 use customcertelement_date\element as customcertelement_date_element;
 use customcertelement_image\element as customcertelement_image_element;
 use customcertelement_text\element;
@@ -40,6 +45,25 @@ use customcertelement_text\element;
  * Tests for the element registry + bootstrap default registrations.
  */
 final class element_registry_test extends advanced_testcase {
+    /**
+     * A native element needs only the required interfaces: no base class, styling or availability hook.
+     *
+     * @covers \mod_customcert\service\element_factory::create
+     */
+    public function test_independent_native_element_registers_and_renders(): void {
+        $record = (object)['id' => 1, 'pageid' => 2, 'name' => 'Independent', 'element' => 'independent'];
+
+        $registry = new element_registry();
+        $registry->register('independent', independent_native_element::class);
+        $this->assertTrue($registry->has('independent'));
+
+        $element = (new element_factory($registry))->create('independent', $record);
+        $this->assertNotInstanceOf(\mod_customcert\element::class, $element);
+        $this->assertNotInstanceOf(stylable_element_interface::class, $element);
+        $this->assertSame('Independent preview', $element->render_html());
+        $element->render($this->createMock(\pdf::class), false, new \stdClass());
+    }
+
     /**
      * Ensure default registrations register all expected keys.
      *
@@ -74,7 +98,6 @@ final class element_registry_test extends advanced_testcase {
 
     /**
      * Smoke-test factory create() with a minimal stdClass record for a few types.
-     * This ensures the resolved classes accept the legacy constructor signature.
      *
      * @covers \mod_customcert\service\element_registry::create
      * @covers \mod_customcert\service\element_registry::get
@@ -86,7 +109,7 @@ final class element_registry_test extends advanced_testcase {
         element_bootstrap::register_defaults($registry);
         $factory = new element_factory($registry);
 
-        // Minimal record with required fields used by legacy element constructors.
+        // Minimal record with required fields.
         $record = (object) [
             'id' => 1,
             'pageid' => 1,
@@ -111,11 +134,28 @@ final class element_registry_test extends advanced_testcase {
 
         foreach ($map as $type => $expectedclass) {
             $instance = $factory->create($type, $record);
-            // Factory returns adapter instances now; unwrap if needed.
-            if ($instance instanceof legacy_element_adapter) {
-                $instance = $instance->get_inner();
-            }
             $this->assertInstanceOf($expectedclass, $instance, "Factory did not create expected class for '{$type}'");
         }
+    }
+
+    /**
+     * Registering a class that is neither a v2 element nor a legacy element subclass must
+     * throw a coding_exception with a clear developer-facing message.
+     *
+     * @covers \mod_customcert\service\element_registry::register
+     */
+    public function test_registering_non_element_class_throws_coding_exception(): void {
+        $this->resetAfterTest();
+
+        // Neither stdClass nor other plain classes are valid element types.
+        $classname = \stdClass::class;
+
+        $registry = new element_registry();
+
+        $this->expectException(\coding_exception::class);
+        $this->expectExceptionMessageMatches('/renderable_element_interface/');
+        $this->expectExceptionMessageMatches('/mod_customcert\\\\element/');
+
+        $registry->register('legacytype', $classname);
     }
 }
