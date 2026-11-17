@@ -169,7 +169,16 @@ final class pdf_generation_service {
 
         $haspattern = $customcert && !empty($customcert->usecustomfilename) && !empty($customcert->customfilenamepattern);
 
-        if (!$haspattern) {
+        $course = ($customcert && !empty($customcert->course))
+            ? $DB->get_record('course', ['id' => (int)$customcert->course], 'id, fullname')
+            : null;
+
+        if (!$haspattern && $course && trim(($user->firstname ?? '') . ($user->lastname ?? '')) !== '') {
+            // EducaXpert (igual que el aula 4.5): sin patrón propio, el diploma se
+            // llama "Nombre Apellido Nombre del curso.pdf". Parche: ver PARCHES.md.
+            $basename = rtrim(format_text(fullname($user), FORMAT_PLAIN) . ' '
+                . format_string($course->fullname, true, ['context' => \context_course::instance($course->id)]), '.');
+        } else if (!$haspattern) {
             $basename = rtrim(format_string($template->get_name(), true, ['context' => $template->get_context()]), '.');
         } else {
             $issue = $this->issues->find_by_user_certificate((int)$customcert->id, (int)$user->id);

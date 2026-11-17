@@ -144,11 +144,26 @@ final class certificate_download_service {
         $zipfilename = $zipfilenameprefix . "_" . self::ZIP_FILE_NAME_DOWNLOAD_ALL_CERTIFICATES;
         $zipfullpath = $zipdir . DIRECTORY_SEPARATOR . $zipfilename;
 
+        // EducaXpert (igual que el aula 4.5): cada PDF del ZIP lleva el mismo nombre
+        // que la descarga individual ("Nombre Apellido Nombre del curso.pdf"), sin
+        // subcarpetas. Parche: ver PARCHES.md.
+        $customcert = $this->db->get_record('customcert', ['templateid' => $template->get_id()]);
+        $usados = [];
+
         $ziparchive = ($this->zipfactory)();
         if ($ziparchive->open($zipfullpath)) {
             foreach ($issues as $issue) {
-                $userfullname = str_replace(' ', '_', mb_strtolower(format_text(fullname($issue), FORMAT_PLAIN)));
-                $pdfname = $userfullname . DIRECTORY_SEPARATOR . 'certificate.pdf';
+                if ($customcert) {
+                    $pdfname = $this->pdfservice->compute_filename_for_user($template, $issue, $customcert);
+                    $base = preg_replace('/\.pdf$/i', '', $pdfname);
+                    for ($n = 2; isset($usados[mb_strtolower($pdfname)]); $n++) {
+                        $pdfname = $base . " ($n).pdf";
+                    }
+                    $usados[mb_strtolower($pdfname)] = true;
+                } else {
+                    $userfullname = str_replace(' ', '_', mb_strtolower(format_text(fullname($issue), FORMAT_PLAIN)));
+                    $pdfname = $userfullname . DIRECTORY_SEPARATOR . 'certificate.pdf';
+                }
                 $filecontents = $this->pdfservice->generate_pdf($template, false, (int)$issue->id, true);
                 $ziparchive->add_file_from_string($pdfname, $filecontents);
             }
