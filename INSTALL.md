@@ -293,34 +293,30 @@ scripts CLI se ejecutan **desde la raíz** aunque el webroot sea `public/`.
 symlink a `.../public`, mover `.htaccess`/`.user.ini` a `public/`, subir PHP,
 configurar el router). Ver [`README.md` §Actualizar Moodle](README.md#actualizar-moodle).
 
-### 3.1 · Refrescar QA con una copia de producción (hecho el 2026-11-17, 4.5.3+ → 5.3.1+)
+### 3.1 · Rehacer QA como copia de producción y ensayar la actualización
 
-QA **no tiene cron** a propósito. Rutas actuales: código en
-`~/sites/aula-qa` (rama `upgrade/moodle-503`), datos en `~/data/moodledata-qa`,
-BD `educaxpert_moodle_qa`. Producción solo se lee.
+Desde el 2026-11-17 QA se arma así (sin cron, a propósito):
 
-1. Respaldo de la BD de QA y volcado de producción (`mysqldump
-   --single-transaction`) a `~/backups/<fecha>-qa-refresco/` (700/600). Las
-   credenciales van en archivos `--defaults-extra-file` 600 que se borran al
-   final, nunca en la línea de comandos.
-2. Código: `git fetch && git checkout <rama>` (si quedaron archivos sueltos de
-   una versión anterior de un plugin, `git clean -fd -- <carpeta del plugin>`).
-3. BD: borrar **todas** las tablas de `educaxpert_moodle_qa` y cargar el
-   volcado de producción.
-4. moodledata: `rsync -a --delete` desde `~/data/moodledata/` excluyendo
-   `cache/ localcache/ sessions/ temp/ trashdir/ lock/ muc/ fonts/`.
-5. `php -d max_input_vars=5000 admin/cli/upgrade.php --non-interactive`
-   (en el CLI hay que subir `max_input_vars`; en la web lo pone `.user.ini`).
-   El bloque SENCE migra solo los datos de los bloques viejos al instalarse.
-6. `admin/cli/uninstall_plugins.php --plugins=block_senceluisalmon,block_sence --run`
-   (quedan "faltantes en disco" tras la migración).
-7. `public/admin/tool/replace/cli/replace.php --search=https://aula.educaxpert.cl
-   --replace=https://qaaula.educaxpert.cl --shorten --non-interactive` (y con `http://`).
-8. Solo QA: `block_senceeducaxpert/ambiente = test` (y ninguna instancia
-   forzando `prod`), procesador `airnotifier` deshabilitado; `noemailever`
-   ya viene de `config-local.php`.
-9. `./instalar-fuentes-pdf.sh` y `admin/cli/purge_caches.php`. Si quedó
-   "actualización pendiente" (hash de versiones), correr `upgrade.php` otra vez.
+1. **Duplicar producción** tal cual: `rsync -a --exclude=error_log ~/sites/aula/
+   ~/sites/aula-qa/`; BD nueva `educaxpert_moodle_qa` (cPanel o `uapi Mysql
+   create_database/create_user/set_privileges_on_database`) cargada con un
+   `mysqldump --single-transaction` de `educaxpert_aula`; moodledata con
+   `rsync -a` a `~/data/moodledata-qa` (sin `cache/ localcache/ sessions/
+   temp/ trashdir/ lock/`, que se crean vacías). En el `config.php` copiado:
+   BD, `wwwroot`, `dataroot`, `$CFG->noemailever = true` y las URL de test
+   del bloque SENCE antiguo apuntando a `rcetest`.
+2. Raíz de `qaaula` → `sites/aula-qa` y PHP 8.3 (`cpapi2 SubDomain
+   changedocroot`, `uapi LangPHP php_set_vhost_versions`).
+3. **Seguros de QA**: `replace.php` de `https://aula.educaxpert.cl` (y
+   `http://`) a `https://qaaula.educaxpert.cl`; SENCE en test
+   (`block_senceluisalmon/ambiente`, `sence_productivo = 0` en las instancias de
+   `block_sence`); procesador `airnotifier` deshabilitado; administrador
+   `adminqa`.
+4. **Ensayar la actualización** con los mismos pasos que producción:
+   [`ACTUALIZAR-PRODUCCION.md`](ACTUALIZAR-PRODUCCION.md). Solo en QA, después:
+   borrar localmente el registro copiado de producción (`mdl_registration_hubs`,
+   `registrationpending = 0`) para que Moodle no pida actualizarlo — **nunca**
+   actualizarlo desde QA.
 
 ### 3.2 · Fuentes de los diplomas
 
