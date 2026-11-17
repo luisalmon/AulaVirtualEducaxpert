@@ -293,6 +293,43 @@ scripts CLI se ejecutan **desde la raíz** aunque el webroot sea `public/`.
 symlink a `.../public`, mover `.htaccess`/`.user.ini` a `public/`, subir PHP,
 configurar el router). Ver [`README.md` §Actualizar Moodle](README.md#actualizar-moodle).
 
+### 3.1 · Refrescar QA con una copia de producción (hecho el 2026-11-17, 4.5.3+ → 5.3.1+)
+
+QA **no tiene cron** a propósito. Rutas actuales: código en
+`~/sites/aula-qa` (rama `upgrade/moodle-503`), datos en `~/data/moodledata-qa`,
+BD `educaxpert_moodle_qa`. Producción solo se lee.
+
+1. Respaldo de la BD de QA y volcado de producción (`mysqldump
+   --single-transaction`) a `~/backups/<fecha>-qa-refresco/` (700/600). Las
+   credenciales van en archivos `--defaults-extra-file` 600 que se borran al
+   final, nunca en la línea de comandos.
+2. Código: `git fetch && git checkout <rama>` (si quedaron archivos sueltos de
+   una versión anterior de un plugin, `git clean -fd -- <carpeta del plugin>`).
+3. BD: borrar **todas** las tablas de `educaxpert_moodle_qa` y cargar el
+   volcado de producción.
+4. moodledata: `rsync -a --delete` desde `~/data/moodledata/` excluyendo
+   `cache/ localcache/ sessions/ temp/ trashdir/ lock/ muc/ fonts/`.
+5. `php -d max_input_vars=5000 admin/cli/upgrade.php --non-interactive`
+   (en el CLI hay que subir `max_input_vars`; en la web lo pone `.user.ini`).
+   El bloque SENCE migra solo los datos de los bloques viejos al instalarse.
+6. `admin/cli/uninstall_plugins.php --plugins=block_senceluisalmon,block_sence --run`
+   (quedan "faltantes en disco" tras la migración).
+7. `public/admin/tool/replace/cli/replace.php --search=https://aula.educaxpert.cl
+   --replace=https://qaaula.educaxpert.cl --shorten --non-interactive` (y con `http://`).
+8. Solo QA: `block_senceeducaxpert/ambiente = test` (y ninguna instancia
+   forzando `prod`), procesador `airnotifier` deshabilitado; `noemailever`
+   ya viene de `config-local.php`.
+9. `./instalar-fuentes-pdf.sh` y `admin/cli/purge_caches.php`. Si quedó
+   "actualización pendiente" (hash de versiones), correr `upgrade.php` otra vez.
+
+### 3.2 · Fuentes de los diplomas
+
+Las fuentes propias (`fonts/tcpdf/compiled/`, la "arial" de los diplomas, que
+en realidad es Arimo, compatible en métricas) **no** se copian dentro del
+núcleo: `./instalar-fuentes-pdf.sh` las deja en `$MOODLE_DATAROOT/fonts/`
+junto con las de fábrica, y Moodle las usa como `PDF_CUSTOM_FONT_PATH`.
+Correrlo en cada entorno después de actualizar el núcleo.
+
 ---
 
 ## 4 · Notas y problemas conocidos
