@@ -39,6 +39,7 @@ $logs = $DB->get_records_sql($sql);
 
 // Diccionario de errores extraído del Manual Técnico SENCE v1.1.5.
 $erroressence = array(
+    '100' => 'Contraseña incorrecta o el usuario no tiene Clave SENCE.',
     '200' => 'El POST tiene uno o más parámetros mandatorios sin información o mal escritos.',
     '201' => 'La URL de Retoma y/o URL de Error no tienen información.',
     '202' => 'La URL de Retoma tiene formato incorrecto.',
@@ -49,6 +50,7 @@ $erroressence = array(
     '207' => 'El Run Alumno tiene formato incorrecto o dígito verificador erróneo.',
     '208' => 'Run Alumno no está autorizado para realizar el curso.',
     '209' => 'El Rut OTEC tiene formato incorrecto o dígito verificador erróneo.',
+    '210' => 'Expiró el tiempo disponible para el ingreso de RUT y Contraseña (tres minutos).',
     '211' => 'El Token no pertenece al OTEC.',
     '212' => 'El Token no está vigente.',
     '300' => 'Error interno no clasificado en SENCE.',

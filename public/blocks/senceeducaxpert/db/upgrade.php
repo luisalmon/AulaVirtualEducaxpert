@@ -30,5 +30,15 @@ function xmldb_block_senceeducaxpert_upgrade($oldversion) {
         upgrade_block_savepoint(true, 2026091501, 'senceeducaxpert');
     }
 
+    if ($oldversion < 2026111700) {
+        // v3.0: si en este sitio siguen las tablas/instancias de los bloques
+        // SENCE anteriores (block_senceluisalmon, block_sence), se traen aquí.
+        // Es idempotente: no duplica lo que ya se haya migrado.
+        $r = \block_senceeducaxpert\local\migracion::ejecutar();
+        mtrace('block_senceeducaxpert: migración desde los bloques SENCE anteriores: ' . json_encode($r));
+
+        upgrade_block_savepoint(true, 2026111700, 'senceeducaxpert');
+    }
+
     return true;
 }

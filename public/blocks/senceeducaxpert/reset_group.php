@@ -38,7 +38,16 @@ if (!has_capability('moodle/course:update', $context)) {
 global $DB;
 $hoyts = strtotime('today');
 
-$members = groups_get_members($groupid, 'u.id');
+if ($groupid > 0) {
+    $group = $DB->get_record('groups', ['id' => $groupid], 'id, courseid', MUST_EXIST);
+    if ((int) $group->courseid !== $courseid) {
+        die('Acceso denegado');
+    }
+    $members = groups_get_members($groupid, 'u.id');
+} else {
+    // Modo "curso": todo el curso.
+    $members = get_enrolled_users($context, '', 0, 'u.id');
+}
 
 if (!empty($members)) {
     $userids = array_keys($members);

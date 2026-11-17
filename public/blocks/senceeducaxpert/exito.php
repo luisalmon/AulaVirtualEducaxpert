@@ -40,6 +40,8 @@ global $CFG, $DB, $USER;
 $courseid = required_param('id', PARAM_INT);
 $tokenparam = optional_param('t', '', PARAM_ALPHANUM);
 $idsesionsence = optional_param('IdSesionSence', null, PARAM_RAW);
+// Qué se le pidió a SENCE: "inicio" (IniciarSesion) o "cierre" (CierreSesion).
+$accion = optional_param('a', 'inicio', PARAM_ALPHA) === 'cierre' ? 'cierre' : 'inicio';
 
 $identity = block_senceeducaxpert::resolve_return_token($tokenparam, $courseid);
 
@@ -80,22 +82,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST)) {
     redirect($CFG->wwwroot . '/course/view.php?id=' . $courseid);
 }
 
-// "Inicio" o "cierre": si ya hay un inicio exitoso hoy para este alumno y
-// curso, esta vuelta es el cierre. No se puede usar $SESSION para esto -no
-// hay continuidad de sesión en un POST entre sitios sin cookie-.
-$hoyts = strtotime('today');
-$yainicio = $DB->record_exists_select(
-    'block_senceeducaxpert_log',
-    "userid = ? AND courseid = ? AND eventtype = 'inicio' AND status = 'exito' AND timecreated >= ?",
-    [$userid, $courseid, $hoyts]
-);
-$eventtype = $yainicio ? 'cierre' : 'inicio';
+// "Inicio" o "cierre" según qué se pidió a SENCE (va en la UrlRetoma). Hasta
+// v2.2 un segundo inicio en el mismo día se anotaba como "cierre", y como el
+// candado solo contaba los "inicio", el alumno quedaba bloqueado en un ciclo
+// pasadas las 2 horas.
+$eventtype = $accion;
 
 $payload = array(
     'INFO_OTEC' => array(
         'RutOtec' => get_config('block_senceeducaxpert', 'otec_rut'),
         'Token' => get_config('block_senceeducaxpert', 'otec_token'),
     ),
+    'ACCION' => $accion,
+    'AMBIENTE' => block_senceeducaxpert::effective_ambiente(block_senceeducaxpert::get_course_settings($courseid)),
     'RESPUESTA_SENCE' => $_POST,
 );
 
@@ -104,7 +103,7 @@ $log->userid = $userid;
 $log->courseid = $courseid;
 $log->eventtype = $eventtype;
 $log->status = 'exito';
-$log->glosa = 'Conexión Exitosa';
+$log->glosa = $accion === 'cierre' ? block_senceeducaxpert::GLOSA_CIERRE : 'Conexión Exitosa';
 $log->payload = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 $log->timecreated = time();
 

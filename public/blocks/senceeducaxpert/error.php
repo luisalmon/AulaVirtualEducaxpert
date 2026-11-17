@@ -36,6 +36,7 @@ global $PAGE, $OUTPUT, $CFG, $DB, $USER;
 $courseid = required_param('id', PARAM_INT);
 $tokenparam = optional_param('t', '', PARAM_ALPHANUM);
 $glosaid = optional_param('GlosaError', '0', PARAM_TEXT);
+$accion = optional_param('a', 'inicio', PARAM_ALPHA) === 'cierre' ? 'cierre' : 'inicio';
 
 $identity = block_senceeducaxpert::resolve_return_token($tokenparam, $courseid);
 
@@ -55,19 +56,15 @@ if (!isloggedin() || isguestuser()) {
 $userid = $USER->id;
 $user = $USER;
 
-$hoyts = strtotime('today');
-$yainicio = $DB->record_exists_select(
-    'block_senceeducaxpert_log',
-    "userid = ? AND courseid = ? AND eventtype = 'inicio' AND status = 'exito' AND timecreated >= ?",
-    [$userid, $courseid, $hoyts]
-);
-$eventtype = $yainicio ? 'cierre' : 'inicio';
+$eventtype = $accion;
+$settings = block_senceeducaxpert::get_course_settings($courseid);
 
 $payload = array(
     'DATOS_ENVIADOS_A_SENCE' => array(
         'RutOtec' => get_config('block_senceeducaxpert', 'otec_rut'),
         'Token' => get_config('block_senceeducaxpert', 'otec_token'),
-        'Ambiente' => get_config('block_senceeducaxpert', 'ambiente'),
+        'Ambiente' => block_senceeducaxpert::effective_ambiente($settings),
+        'Accion' => $accion,
         'UrlError' => $CFG->wwwroot . '/blocks/senceeducaxpert/error.php?id=' . $courseid,
         'UrlRetoma' => $CFG->wwwroot . '/blocks/senceeducaxpert/exito.php?id=' . $courseid,
     ),
@@ -87,6 +84,7 @@ $DB->insert_record('block_senceeducaxpert_log', $log);
 
 // Diccionario de errores extraído del Manual Técnico SENCE v1.1.5.
 $erroressence = array(
+    '100' => 'Contraseña incorrecta o el usuario no tiene Clave SENCE.',
     '200' => 'El POST tiene uno o más parámetros mandatorios sin información o mal escritos.',
     '201' => 'La URL de Retoma y/o URL de Error no tienen información.',
     '202' => 'La URL de Retoma tiene formato incorrecto.',
@@ -97,6 +95,7 @@ $erroressence = array(
     '207' => 'El Run Alumno tiene formato incorrecto o dígito verificador erróneo.',
     '208' => 'Run Alumno no está autorizado para realizar el curso.',
     '209' => 'El Rut OTEC tiene formato incorrecto o dígito verificador erróneo.',
+    '210' => 'Expiró el tiempo disponible para el ingreso de RUT y Contraseña (tres minutos).',
     '211' => 'El Token no pertenece al OTEC.',
     '212' => 'El Token no está vigente.',
     '300' => 'Error interno no clasificado en SENCE.',
@@ -117,8 +116,8 @@ $erroressence = array(
 
 $mensajeerror = isset($erroressence[$glosaid]) ? $erroressence[$glosaid] : "Error no identificado (Código: {$glosaid})";
 
-// Envío de correo al administrador.
-$supportemail = get_config('block_senceeducaxpert', 'support_email');
+// Envío de correo a soporte (el del curso si lo define, si no el global).
+[$supportemail] = block_senceeducaxpert::effective_support($settings);
 if (!empty($supportemail)) {
     $supportuser = new stdClass();
     $supportuser->id = -99;
@@ -127,11 +126,16 @@ if (!empty($supportemail)) {
     $supportuser->deleted = 0;
     $supportuser->suspended = 0;
 
+    $curso = get_course($courseid);
     $asunto = "Alerta SENCE: Error en curso ID {$courseid}";
 
     $mensajehtml = '<h3>Error en Validación SENCE</h3>';
     $mensajehtml .= '<p>El alumno <strong>' . s(fullname($user)) . '</strong> (RUT: ' . s($user->idnumber) . ') no pudo registrar su asistencia.</p>';
     $mensajehtml .= '<ul>';
+    $mensajehtml .= '<li><strong>Curso:</strong> ' . s($courseid . ' - ' . format_string($curso->fullname)) . '</li>';
+    $mensajehtml .= '<li><strong>Correo del alumno:</strong> ' . s($user->email) . '</li>';
+    $mensajehtml .= '<li><strong>Teléfonos:</strong> ' . s(trim($user->phone1 . ' ' . $user->phone2) ?: '—') . '</li>';
+    $mensajehtml .= '<li><strong>Acción:</strong> ' . ($accion === 'cierre' ? 'cierre de sesión' : 'inicio de sesión') . '</li>';
     $mensajehtml .= '<li><strong>Código de Error:</strong> ' . s($glosaid) . '</li>';
     $mensajehtml .= '<li><strong>Mensaje SENCE:</strong> ' . s($mensajeerror) . '</li>';
     $mensajehtml .= '</ul>';
