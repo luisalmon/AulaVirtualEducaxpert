@@ -38,7 +38,7 @@ error_log
 /.settings/
 .project
 .buildpath
-tags
+/tags
 .DS_Store
 Thumbs.db
 
