@@ -47,7 +47,7 @@ KEEP_PLUGINS=(
 # se borra con el resto del árbol y se regenera después con composer.phar
 # (ver el aviso en "SIGUIENTES PASOS").
 KEEP_FILES=(.git .gitignore .env .env.example config.php config-local.php
-            README.md INSTALL.md upgrade-core.sh composer.phar fonts)
+            README.md INSTALL.md upgrade-core.sh instalar-fuentes-pdf.sh composer.phar fonts)
 
 cd "$REPO"
 echo "==> Repositorio: $REPO"
@@ -239,15 +239,11 @@ for p in "${KEEP_PLUGINS[@]}"; do
   echo "    + public/$p"
 done
 
-# 7 · Reinstalar fuentes propias de TCPDF (p.ej. la "arial" de los diplomas) -
-# public/lib se pisó entero en el paso 5; fonts/ (en KEEP_FILES) sobrevivió
-# y se copia aquí encima de las fuentes de fábrica de TCPDF.
-if [ -d "$REPO/fonts/tcpdf/compiled" ] && [ -n "$(ls -A "$REPO/fonts/tcpdf/compiled" 2>/dev/null)" ]; then
-  echo "==> Reinstalando fuentes TCPDF propias (fonts/tcpdf/compiled/)"
-  mkdir -p "$REPO/public/lib/tcpdf/fonts"
-  cp -a "$REPO/fonts/tcpdf/compiled/." "$REPO/public/lib/tcpdf/fonts/"
-  echo "    + $(ls "$REPO/fonts/tcpdf/compiled" | wc -l) ficheros"
-fi
+# 7 · Fuentes propias de TCPDF (p.ej. la "arial" de los diplomas) ---------
+# Ya NO se copian dentro de public/lib/tcpdf/fonts: eso es núcleo de Moodle y
+# no se toca. Van a $CFG->dataroot/fonts/ (PDF_CUSTOM_FONT_PATH, mecanismo
+# oficial de lib/pdflib.php) con ./instalar-fuentes-pdf.sh, que hay que
+# correr en cada entorno después de actualizar el núcleo.
 
 cat <<EOF
 
@@ -265,7 +261,8 @@ cat <<EOF
     (bajar de https://moodle.org/plugins y reemplazar la carpeta en public/):
       theme_moove   mod_customcert   mod_hvp   auth_userkey
       format_remuiformat   qformat_h5p   theme_trema
- 4) Servir desde public/ :
+ 4) ./instalar-fuentes-pdf.sh   (fuentes de fábrica + fonts/tcpdf/compiled -> dataroot/fonts)
+ 5) Servir desde public/ :
       local:  php -S localhost:8080 -t public
       QA:     symlink del dominio -> <repo>/public
  5) Probar sobre una COPIA de la BD:
