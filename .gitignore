@@ -44,7 +44,7 @@ error_log
 /.settings/
 .project
 .buildpath
-tags
+/tags
 *.swp
 *.swo
 *~
