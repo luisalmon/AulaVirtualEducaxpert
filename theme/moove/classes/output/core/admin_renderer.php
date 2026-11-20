@@ -114,7 +114,12 @@ class admin_renderer extends \core_admin_renderer {
         $output .= $this->mobile_configuration_warning($mobileconfigured);
         $output .= $this->forgotten_password_url_warning($invalidforgottenpasswordurl);
         $output .= $this->mnet_deprecation_warning($xmlrpcwarning);
-        $output .= $this->moodlenet_removal_warning();
+        // Parche EducaXpert (2026-11-20): Moove 4.5.2 llama a un aviso que el núcleo 4.5.3+ de
+        // producción todavía no tiene; sin esta condición, /admin/index.php da "Unknown method".
+        // Desaparece al actualizar a Moodle 5.3 (el Moove nuevo reemplaza este archivo).
+        if (method_exists(\core_admin_renderer::class, 'moodlenet_removal_warning')) {
+            $output .= $this->moodlenet_removal_warning();
+        }
         $output .= $this->userfeedback_encouragement($showfeedbackencouragement);
         // $output .= $this->services_and_support_content($showservicesandsupport);
         $output .= $this->campaign_content($showcampaigncontent);
